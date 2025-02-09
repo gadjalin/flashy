@@ -13,8 +13,8 @@ _logT_lo = 3.0 # Minimum temperature in the table in log
 _logT_hi = 13.0 # Maximum temperature in the table in log
 _logd_lo = -12.0 # Minimum density in the table in log
 _logd_hi = 14.0 # Maximum density in the table in log
-_T_step = (logT_hi - logT_lo)/float(EOSJMAX-1)
-_d_step = (logd_hi - logd_lo)/float(EOSIMAX-1)
+_T_step = (_logT_hi - _logT_lo)/float(_EOSJMAX-1)
+_d_step = (_logd_hi - _logd_lo)/float(_EOSIMAX-1)
 
 # Free energy
 _eos_f     = np.zeros((_EOSIMAX, _EOSJMAX))
