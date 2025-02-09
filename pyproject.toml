@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+platforms = ["any"]
+packages = ["flashy"]
+
+[tool.setuptools.package-data]
+flashy = ["data/*.dat"]
+
+[project]
+name = "flashy"
+version = "0.1a_dev0"
+description = "A package for performing various FLASH related tasks."
+readme = "README.md"
+license = {file = "LICENSE"}
+license-files = ["LICENSE*", "AUTHORS.md"]
+dependencies = [ "numpy>=2.0.0" ]
+maintainers = [
+    {name = "Gaétan J.A.M. Jalin", email = "gaetan.jalin@tu-darmstadt.de"}
+]
+
+[project.urls]
+Repository = "https://github.com/gadjalin/flashy.git"
