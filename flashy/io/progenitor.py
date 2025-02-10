@@ -21,7 +21,7 @@ class progenitor(object):
     # Constructor
     def __init__(self):
         self.__comment = ''
-        self.__columns = np.emty(0)
+        self.__columns = np.empty(0)
         self.__data = np.empty(0)
         self.__loaded = False
 
@@ -192,7 +192,7 @@ class progenitor(object):
         Clear all data from memory, if any.
         """
         self.__comment = ''
-        self.__columns = np.emty(0)
+        self.__columns = np.empty(0)
         self.__data = np.empty(0)
         self.__loaded = False
         
