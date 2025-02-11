@@ -1,4 +1,3 @@
-from enum import Enum
 import numpy as np
 from pathlib import Path
 import os
@@ -6,7 +5,9 @@ try:
     from importlib import resources
 except ModuleNotFoundError:
     import importlib_resources as resources
-# This simply follows closely eos_helm.F90
+from ._eos_var import EOS_VAR
+from ._eos_mode import EOS_MODE
+# This simply closely follows eos_helm.F90
 
 # Private module fields
 
@@ -55,43 +56,16 @@ _EOS_D = 10.0**(_LOGD_LO + np.arange(_EOSIMAX) * _D_STEP)
 _EOS_DT = np.diff(_EOS_T)
 _EOS_DD = np.diff(_EOS_D)
 
+_EOS_SMALLT = 1e-10
+_EOS_TOL = 1e-8
+_EOS_MAXNEWTON = 50
+
 _initialised = False
 
 # EOS parameters
+forceConstantInput = False
 coulombCorrection = True
 coulombMultiplier = 1.0
-
-# eosData indices
-class EOS(Enum):
-    PRES = 0
-    DENS = 1
-    EINT = 2
-    TEMP = 3
-    GAMC = 4
-    ABAR = 5
-    ZBAR = 6
-    ENTR = 7
-    EKIN = 8
-    
-    DPT = 9
-    DPD = 10
-    DET = 11
-    DED = 12
-    DEA = 13
-    DEZ = 14
-    DST = 15
-    DSD = 16
-    CV  = 17
-    CP  = 18
-    PEL = 19
-    NE  = 20
-    ETA = 21
-    
-    NUM_VARS = 22
-
-    MODE_DENS_TEMP = 100
-    MODE_DENS_EI   = 101
-    MODE_DENS_PRES = 102
 
 
 # Check helmholtz has been initialised for convenience
@@ -158,20 +132,269 @@ def init(helm_table_file = None) -> None:
     _initialised = True
 
 
-def eos(eosData: list | np.ndarray):
+def eos(mode: EOS_MODE, eosData: list | np.ndarray):
     """
     Call the Helmholtz EOS
-
-    
     """
-    assert (eosData is not None) and (len(eosData) % EOS.NUM_VARS == 0), "eosData must be an array of size N*EOS.NUM_VARS"
+    assert (eosData is not None) and (len(eosData) % EOS_VAR.NUM == 0), "eosData must be an array of size N*EOS_VAR.NUM"
 
+    vecLen = int(len(eosData) / EOS_VAR.NUM)
+
+    # Convenience indices to index eosData
+    presStart = EOS_VAR.PRES*vecLen
+    densStart = EOS_VAR.DENS*vecLen
+    tempStart = EOS_VAR.TEMP*vecLen
+    eintStart = EOS_VAR.EINT*vecLen
+    gamcStart = EOS_VAR.GAMC*vecLen
+    abarStart = EOS_VAR.ABAR*vecLen
+    zbarStart = EOS_VAR.ZBAR*vecLen
+    entrStart = EOS_VAR.ENTR*vecLen
+
+    # Main quantities
+    densRow = np.array(eosData[densStart:densStart+vecLen])
+    tempRow = np.array(eosData[tempStart:tempStart+vecLen])
+    abarRow = np.array(eosData[abarStart:abarStart+vecLen])
+    zbarRow = np.array(eosData[zbarStart:zbarStart+vecLen])
+
+    # Derived quantities
+    ptotRow = np.zeros(vecLen)
+    etotRow = np.zeros(vecLen)
+    stotRow = np.zeros(vecLen)
+    dpdRow  = np.zeros(vecLen)
+    dptRow  = np.zeros(vecLen)
+    dedRow  = np.zeros(vecLen)
+    detRow  = np.zeros(vecLen)
+    dsdRow  = np.zeros(vecLen)
+    dstRow  = np.zeros(vecLen)
+    pelRow  = np.zeros(vecLen)
+    neRow   = np.zeros(vecLen)
+    etaRow  = np.zeros(vecLen)
+    gamcRow = np.zeros(vecLen)
+    cvRow   = np.zeros(vecLen)
+    cpRow   = np.zeros(vecLen)
+
+    if mode is EOS_MODE.DENS_TEMP:
+        # Call helmholtz
+        ptotRow, etotRow, stotRow, \
+        dpdRow, dptRow, \
+        dedRow, detRow, \
+        dsdRow, dstRow, \
+        pelRow, neRow, etaRow, gamcRow, \
+        cvRow, cpRow = helm(densRow, tempRow, abarRow, zbarRow)
+
+        # Set output
+        eosData[presStart:presStart+vecLen] = ptotRow
+        eosData[eintStart:eintStart+vecLen] = etotRow
+        eosData[gamcStart:gamcStart+vecLen] = gamcRow
+        eosData[entrStart:entrStart+vecLen] = stotRow
+    elif mode is EOS_MODE.DENS_EI:
+        # Desired EI
+        ewant = np.asarray(eosData[eintStart:eintStart+vecLen])
+        # Initialise errors
+        tnew = np.zeros(vecLen)
+        error = np.zeros(vecLen)
+
+        # Call helmholtz
+        ptotRow, etotRow, stotRow, \
+        dpdRow, dptRow, \
+        dedRow, detRow, \
+        dsdRow, dstRow, \
+        pelRow, neRow, etaRow, gamcRow, \
+        cvRow, cpRow = helm(densRow, tempRow, abarRow, zbarRow)
+
+        # Create initial condition
+        tnew = tempRow - (etotRow - ewant) / detRow
+        # Don't allow the temperature to change by more than an order of magnitude
+        tnew = np.clip(tnew, 0.1 * tempRow, 10.0 * tempRow)
+        # Compute the error
+        error = np.abs((tnew - tempRow) / tempRow)
+        # Store the new temperature
+        tempRow = tnew.copy()
+        # Check if we are freezing, if so set the temperature to smallt
+        # and adjust the error so we don't wait for this one
+        tempRow[tnew < _EOS_SMALLT] = _EOS_SMALLT
+        error[tnew < _EOS_SMALLT] = 0.1 * _EOS_TOL
+
+        # Loop
+        for k in range(vecLen):
+            for i in range(2, _EOS_MAXNEWTON+1):
+                if error[k] < _EOS_TOL:
+                    break
+
+                # Call helmholtz
+                ptotRow, etotRow, stotRow, \
+                dpdRow, dptRow, \
+                dedRow, detRow, \
+                dsdRow, dstRow, \
+                pelRow, neRow, etaRow, gamcRow, \
+                cvRow, cpRow = helm(densRow, tempRow, abarRow, zbarRow)
+
+                tnew[k] = tempRow[k] - (etotRow[k] - ewant[k]) / detRow[k]
+    
+                # Don't allow the temperature to change by more than an order of magnitude
+                tnew[k] = np.clip(tnew[k], 0.1 * tempRow[k], 10.0 * tempRow[k])
+                # Compute the error
+                error[k] = np.abs((tnew[k] - tempRow[k]) / tempRow[k])
+    
+                # Store the new temperature
+                tempRow[k] = tnew[k]
+    
+                # Check if we are freezing, if so set the temperature to smallt
+                # and adjust the error so we don't wait for this one
+                if tempRow[k] < _EOS_SMALLT:
+                    tempRow[k] = _EOS_SMALLT
+                    error[k] = 0.1 * _EOS_TOL
+            else:  # If the Newton loop fails to converge
+                print("Newton-Raphson failed in subroutine eos_helmholtz")
+                print("(e and rho as input):")
+                print(f"Too many iterations: {_EOS_MAXNEWTON}")
+                print(f"k    = {k}, ({vecLen})")
+                print(f"Temp = {tempRow[k]}")
+                print(f"Dens = {densRow[k]}")
+                print(f"Pres = {ptotRow[k]}")
+    
+                raise RuntimeError("too many iterations in Helmholtz Eos")
+
+        # Crank through the entire eos one last time
+        ptotRow, etotRow, stotRow, \
+        dpdRow, dptRow, \
+        dedRow, detRow, \
+        dsdRow, dstRow, \
+        pelRow, neRow, etaRow, gamcRow, \
+        cvRow, cpRow = helm(densRow, tempRow, abarRow, zbarRow)
+
+        eosData[tempStart:tempStart+vecLen] = tempRow
+        eosData[presStart:presStart+vecLen] = ptotRow
+        eosData[gamcStart:gamcStart+vecLen] = gamcRow
+        eosData[entrStart:entrStart+vecLen] = stotRow
+        
+        if forceConstantInput:
+            eosData[eintStart:eintStart+vecLen] = ewant
+        else:
+            eosData[eintStart:eintStart+vecLen] = etotRow
+    elif mode is EOS_MODE.DENS_PRES:
+        # Desired PRES
+        pwant = np.asarray(eosData[presStart:presStart+vecLen])
+        # Initialise errors
+        tnew = np.zeros(vecLen)
+        error = np.zeros(vecLen)
+
+        # Call helmholtz
+        ptotRow, etotRow, stotRow, \
+        dpdRow, dptRow, \
+        dedRow, detRow, \
+        dsdRow, dstRow, \
+        pelRow, neRow, etaRow, gamcRow, \
+        cvRow, cpRow = helm(densRow, tempRow, abarRow, zbarRow)
+
+        # Create initial condition
+        tnew = tempRow - (ptotRow - pwant) / dptRow
+        # Don't allow the temperature to change by more than an order of magnitude
+        tnew = np.clip(tnew, 0.1 * tempRow, 10.0 * tempRow)
+        # Compute the error
+        error = np.abs((tnew - tempRow) / tempRow)
+        # Store the new temperature
+        tempRow = tnew.copy()
+        # Check if we are freezing, if so set the temperature to smallt
+        # and adjust the error so we don't wait for this one
+        tempRow[tnew < _EOS_SMALLT] = _EOS_SMALLT
+        error[tnew < _EOS_SMALLT] = 0.1 * _EOS_TOL
+
+        # Loop
+        for k in range(vecLen):
+            for i in range(2, _EOS_MAXNEWTON+1):
+                if error[k] < _EOS_TOL:
+                    break
+
+                # Call helmholtz
+                ptotRow, etotRow, stotRow, \
+                dpdRow, dptRow, \
+                dedRow, detRow, \
+                dsdRow, dstRow, \
+                pelRow, neRow, etaRow, gamcRow, \
+                cvRow, cpRow = helm(densRow, tempRow, abarRow, zbarRow)
+
+                tnew[k] = tempRow[k] - (ptotRow[k] - pwant[k]) / dptRow[k]
+    
+                # Don't allow the temperature to change by more than an order of magnitude
+                tnew[k] = np.clip(tnew[k], 0.1 * tempRow[k], 10.0 * tempRow[k])
+    
+                # Compute the error
+                error[k] = np.abs((tnew[k] - tempRow[k]) / tempRow[k])
+    
+                # Store the new temperature
+                tempRow[k] = tnew[k]
+    
+                # Check if we are freezing, if so set the temperature to smallt
+                # and adjust the error so we don't wait for this one
+                if tempRow[k] < _EOS_SMALLT:
+                    tempRow[k] = _EOS_SMALLT
+                    error[k] = 0.1 * _EOS_TOL
+            else:  # If the Newton loop fails to converge
+                print("Newton-Raphson failed in subroutine eos_helmholtz")
+                print("(e and rho as input):")
+                print(f"Too many iterations: {_EOS_MAXNEWTON}")
+                print(f"k    = {k}, ({vecLen})")
+                print(f"Temp = {tempRow[k]}")
+                print(f"Dens = {densRow[k]}")
+                print(f"Pres = {ptotRow[k]}")
+    
+                raise RuntimeError("too many iterations in Helmholtz Eos")
+
+        # Crank through the entire eos one last time
+        ptotRow, etotRow, stotRow, \
+        dpdRow, dptRow, \
+        dedRow, detRow, \
+        dsdRow, dstRow, \
+        pelRow, neRow, etaRow, gamcRow, \
+        cvRow, cpRow = helm(densRow, tempRow, abarRow, zbarRow)
+
+        eosData[tempStart:tempStart+vecLen] = tempRow
+        eosData[gamcStart:gamcStart+vecLen] = gamcRow
+        eosData[eintStart:eintStart+vecLen] = etotRow
+        eosData[entrStart:entrStart+vecLen] = stotRow
+        
+        if forceConstantInput:
+            eosData[presStart:presStart+vecLen] = pwant
+        else:
+            eosData[presStart:presStart+vecLen] = ptotRow
+    else:
+        raise RuntimeError('Unknown EOS mode')
+
+    # Get the derivatives
+    dstStart = EOS_VAR.DST.value * vecLen
+    dsdStart = EOS_VAR.DSD.value * vecLen
+    dptStart = EOS_VAR.DPT.value * vecLen
+    dpdStart = EOS_VAR.DPD.value * vecLen
+    detStart = EOS_VAR.DET.value * vecLen
+    dedStart = EOS_VAR.DED.value * vecLen
+    deaStart = EOS_VAR.DEA.value * vecLen
+    dezStart = EOS_VAR.DEZ.value * vecLen
+    pelStart = EOS_VAR.PEL.value * vecLen
+    neStart  = EOS_VAR.NE.value * vecLen
+    etaStart = EOS_VAR.ETA.value * vecLen
+    cvStart  = EOS_VAR.CV.value * vecLen
+    cpStart  = EOS_VAR.CP.value * vecLen
+    
+    eosData[dstStart:dstStart + vecLen] = dstRow
+    eosData[dsdStart:dsdStart + vecLen] = dsdRow
+    eosData[dptStart:dptStart + vecLen] = dptRow
+    eosData[dpdStart:dpdStart + vecLen] = dpdRow
+    eosData[detStart:detStart + vecLen] = detRow
+    eosData[dedStart:dedStart + vecLen] = dedRow
+    eosData[deaStart:deaStart + vecLen] = 0.0 # deaRow
+    eosData[dezStart:dezStart + vecLen] = 0.0 # dezRow
+    eosData[pelStart:pelStart + vecLen] = pelRow
+    eosData[neStart:neStart + vecLen]   = neRow
+    eosData[etaStart:etaStart + vecLen] = etaRow
+    eosData[cvStart:cvStart + vecLen]   = cvRow
+    eosData[cpStart:cpStart + vecLen]   = cpRow
+
+    return eosData
+    
 
 def helm(densRow, tempRow, abarRow, zbarRow):
     _check_init()
-    assert (len(densRow) == len(tempRow) and
-            len(densRow) == len(abarRow) and
-            len(densRow) == len(zbarRow))
 
     from ._herm import (
         psi0, dpsi0, ddpsi0, psi1, dpsi1, ddpsi1, psi2, dpsi2, ddpsi2,
@@ -269,9 +492,9 @@ def helm(densRow, tempRow, abarRow, zbarRow):
         dIn = Ye*dens
         # hash locate this temperature and density
         jat = int((np.log10(temp) - _LOGT_LO)/_T_STEP)
-        jat = max(0, min(jat, _EOSJMAX-1))
+        jat = max(0, min(jat, _EOSJMAX-2))
         iat = int((np.log10(dIn) - _LOGD_LO)/_D_STEP)
-        iat = max(0, min(iat, _EOSIMAX-1))
+        iat = max(0, min(iat, _EOSIMAX-2))
         # access the table locations only once
         fi = np.zeros(36)
         fi[0]  = _eos_f[iat,jat]
