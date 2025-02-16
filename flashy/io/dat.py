@@ -2,7 +2,7 @@ import numpy as np
 import re
 
 
-class dat(object):
+class Dat(object):
     """
     Open a FLASH dat file
 

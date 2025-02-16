@@ -1,2 +1,2 @@
-from .dat import dat
-from .progenitor import progenitor
+from .dat import Dat
+from .progenitor import Progenitor

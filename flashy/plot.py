@@ -48,9 +48,9 @@ _PLOT_LABELS = { \
 
 def _fmt_magnitude(scale_factor, log):
     if log:
-        return f'$\\times 10^{{{normalise}}}$'
+        return f'$\\times 10^{{{int(np.log10(scale_factor))}}}$'
     else:
-        return f'$\\times {normalise}$'
+        return f'$\\times {int(scale_factor)}$'
 
 
 def get_plot_label(var: str, scale_factor: int = None, log: bool = None) -> str:
@@ -66,11 +66,11 @@ def get_plot_label(var: str, scale_factor: int = None, log: bool = None) -> str:
         Use in combination with log. If log is True and this is
         different than 0, a 10^{scale_factor} is prepended to the units in
         the label.
-        If log is False and normalise is different than 1, the value of
-        the normalise variable is prepended to the units in the label.
+        If log is False and scale_factor is different than 1, the value of
+        the scale_factor variable is prepended to the units in the label.
         If None, use unity scaling depending on the value of log.
     log : bool
-        Use in combination with normalise.
+        Use in combination with scale_factor.
         If log is True, the data are normalised on a log scale, and on
         a linear scale otherwise.
         If None, use default for the var quantity.
