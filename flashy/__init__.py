@@ -13,3 +13,5 @@ from . import analysis
 from . import eos
 from . import io
 from . import network
+
+from . import plot

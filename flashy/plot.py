@@ -1,11 +1,15 @@
-import numpy as np
 import re
+from enum import IntEnum
+import numpy as np
 from itertools import groupby
 from collections.abc import Mapping, Sequence
 from abc import ABC, abstractmethod
 
 
-_LabelMap = Enum('LabelMap', [('LABEL': 0, 'UNITS': 1, 'LOG': 2])
+class _LabelMap(IntEnum):
+    LABEL = 0
+    UNITS = 1
+    LOG = 2
 
 
 _PLOT_LABELS = { \
@@ -33,7 +37,8 @@ _PLOT_LABELS = { \
     'point_mass'       : ( r'$m_\text{point}$',    r'$\mathrm{g}$',                  False ), \
     'neutron_star_mass': ( r'$M_\text{NS}$',       r'$M_\odot$',                     False ), \
     'central_density'  : ( r'$\rho_\text{c}$',     r'$\mathrm{g\,cm^{-3}}$',         True  ), \
-    'pres'             : ( r'Pressure',            r'$\mathrm{g\,cm^{-1}\,s^{-2}}$', True  ), \
+    'pres'             : ( r'$P$',                 r'$\mathrm{g\,cm^{-1}\,s^{-2}}$', True  ), \
+    'entr'             : ( r'$s$',                 r'$k_B\,\mathrm{baryon^{-1}}$',   False ), \
     'ye'               : ( r'$Y_e$',               None,                             False ), \
     'sumy'             : ( r'SumY',                None,                             False ), \
     'abar'             : ( r'$\mathcal{\bar{A}}$', None,                             False ), \
