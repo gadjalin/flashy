@@ -1,5 +1,4 @@
 import numpy as np
-from collections.abc import Mapping, Sequence
 
 
 class Progenitor(object):
@@ -32,14 +31,17 @@ class Progenitor(object):
     @classmethod
     def from_file(cls, filename, parser = 'flash', include_vars = list(), exclude_vars = list()):
         """
-        Initialise progenitor object from a FLASH progenitor profile
+        Initialise progenitor object from a progenitor profile
         """
         prog = cls()
         prog.read_file(filename, parser, include_vars, exclude_vars)
         return prog
 
     @classmethod
-    def from_data(cls, r: Sequence[float], data: Mapping[str, Sequence[float]], comment: str = ""):
+    def from_data(cls, r, data, comment: str = ""):
+        """
+        Initialise progenitor object from memory
+        """
         prog = cls()
         prog.set_data(r, data, comment)
         return prog
@@ -56,12 +58,12 @@ class Progenitor(object):
         Get the name of the columns.
         """
         self.__checkloaded()
-        return self.__columns
+        return self.__columns.copy()
 
     def __getitem__(self, index):
         return self.get(index)
 
-    def get(self, index: int | str | tuple | list | slice | np.ndarray):
+    def get(self, index):
         """
         Get the data in the specified column.
 
@@ -70,6 +72,8 @@ class Progenitor(object):
         index : int | str | tuple | list | np.ndarray
             Index of the column, either by its name, or numerical index.
             Can be a list of indices or names, or a slice.
+            If a list of indices is passed, they must all be ints
+            or all strings.
 
         Returns
         -------
@@ -82,8 +86,8 @@ class Progenitor(object):
         IndexError
             If the index type is invalid.
         """
-
         self.__checkloaded()
+        
         if isinstance(index, int):
             return self.__data[self.__data.dtype.names[index]]
         elif isinstance(index, str):
@@ -100,7 +104,7 @@ class Progenitor(object):
         else:
             raise IndexError(f'Invalid index type: {type(index)}')
 
-    def read_file(self, filename: str, parser = 'flash', include_vars = list(), exclude_vars = list()) -> None:
+    def read_file(self, filename, parser = 'flash', include_vars = list(), exclude_vars = list()) -> None:
         """
         Read a progenitor file and loads the data in memory.
 
@@ -134,9 +138,7 @@ class Progenitor(object):
         from typing import Callable
 
         # Check progenitor file parser
-        if parser is None:
-           file_parser = flash_parser 
-        elif isinstance(parser, str):
+        if isinstance(parser, str):
             parser = parser.lower()
             if parser in ['default', 'flash']:
                 file_parser = flash_parser
@@ -184,7 +186,7 @@ class Progenitor(object):
         
         self.__loaded = True
 
-    def set_data(r: Sequence[float], data: Mapping[str, Sequence[float]], comment: str = "") -> None:
+    def set_data(r, data, comment: str = "") -> None:
         """
         Set the data describing the progenitor.
         
@@ -194,9 +196,9 @@ class Progenitor(object):
 
         Parameters
         ----------
-        r : Sequence[float]
+        r :
             Mid-cell radii of the progenitor profile in increasing order.
-        data : Mapping[str, Sequence[float]]
+        data :
             Dictionary with the name of the relevant variables as keys
             and their values at each given cell radius.
         comment : str
