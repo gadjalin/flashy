@@ -88,28 +88,41 @@ _initialised = False
 
 
 class Helmholtz(object):
-    # Input quantities
-    _densRow: np.ndarray
-    _tempRow: np.ndarray
-    _abarRow: np.ndarray
-    _zbarRow: np.ndarray
+    # Internal eos data rows
+    densRow: np.ndarray
+    tempRow: np.ndarray
+    abarRow: np.ndarray
+    zbarRow: np.ndarray
 
-    # Derived quantities
-    _ptotRow: np.ndarray
-    _etotRow: np.ndarray
-    _stotRow: np.ndarray
-    _dpdRow : np.ndarray
-    _dptRow : np.ndarray
-    _dedRow : np.ndarray
-    _detRow : np.ndarray
-    _dsdRow : np.ndarray
-    _dstRow : np.ndarray
-    _pelRow : np.ndarray
-    _neRow  : np.ndarray
-    _etaRow : np.ndarray
-    _gamcRow: np.ndarray
-    _cvRow  : np.ndarray
-    _cpRow  : np.ndarray
+    ptotRow: np.ndarray
+    etotRow: np.ndarray
+    stotRow: np.ndarray
+    dpdRow : np.ndarray
+    dptRow : np.ndarray
+    dedRow : np.ndarray
+    detRow : np.ndarray
+    dsdRow : np.ndarray
+    dstRow : np.ndarray
+    pelRow : np.ndarray
+    neRow  : np.ndarray
+    etaRow : np.ndarray
+    gamcRow: np.ndarray
+    cvRow  : np.ndarray
+    cpRow  : np.ndarray
+
+    # Extra output quantities (on demand)
+    pionRow: np.ndarray
+    peleRow: np.ndarray
+    pradRow: np.ndarray
+    pcoulRow: np.ndarray
+    eionRow: np.ndarray
+    eeleRow: np.ndarray
+    eradRow: np.ndarray
+    ecoulRow: np.ndarray
+    sionRow: np.ndarray
+    seleRow: np.ndarray
+    sradRow: np.ndarray
+    scoulRow: np.ndarray
 
     def __init__(self):
         if not _initialised:
@@ -190,7 +203,8 @@ class Helmholtz(object):
 
         vecLen = int(len(eosData) / EOS_VAR.NUM)
         # Make sure this is a numpy array, for convenience
-        eosData = np.asarray(eosData, dtype=np.float64)
+        # and copy to preserve input data on the callers side
+        eosData = np.asarray(eosData, dtype=np.float64).copy()
 
         # Convenience constants to index eosData
         presStart = EOS_VAR.PRES*vecLen
@@ -203,52 +217,52 @@ class Helmholtz(object):
         entrStart = EOS_VAR.ENTR*vecLen
 
         # Main quantities
-        self._densRow = np.array(eosData[densStart:densStart+vecLen], dtype=np.float64)
-        self._tempRow = np.array(eosData[tempStart:tempStart+vecLen], dtype=np.float64)
-        self._abarRow = np.array(eosData[abarStart:abarStart+vecLen], dtype=np.float64)
-        self._zbarRow = np.array(eosData[zbarStart:zbarStart+vecLen], dtype=np.float64)
+        self.densRow = np.array(eosData[densStart:densStart+vecLen], dtype=np.float64)
+        self.tempRow = np.array(eosData[tempStart:tempStart+vecLen], dtype=np.float64)
+        self.abarRow = np.array(eosData[abarStart:abarStart+vecLen], dtype=np.float64)
+        self.zbarRow = np.array(eosData[zbarStart:zbarStart+vecLen], dtype=np.float64)
 
-        self._ptotRow = np.zeros(vecLen, dtype=np.float64)
-        self._etotRow = np.zeros(vecLen, dtype=np.float64)
-        self._stotRow = np.zeros(vecLen, dtype=np.float64)
-        self._dpdRow  = np.zeros(vecLen, dtype=np.float64)
-        self._dptRow  = np.zeros(vecLen, dtype=np.float64)
-        self._dedRow  = np.zeros(vecLen, dtype=np.float64)
-        self._detRow  = np.zeros(vecLen, dtype=np.float64)
-        self._dsdRow  = np.zeros(vecLen, dtype=np.float64)
-        self._dstRow  = np.zeros(vecLen, dtype=np.float64)
-        self._pelRow  = np.zeros(vecLen, dtype=np.float64)
-        self._neRow   = np.zeros(vecLen, dtype=np.float64)
-        self._etaRow  = np.zeros(vecLen, dtype=np.float64)
-        self._gamcRow = np.zeros(vecLen, dtype=np.float64)
-        self._cvRow   = np.zeros(vecLen, dtype=np.float64)
-        self._cpRow   = np.zeros(vecLen, dtype=np.float64)
+        self.ptotRow = np.zeros(vecLen, dtype=np.float64)
+        self.etotRow = np.zeros(vecLen, dtype=np.float64)
+        self.stotRow = np.zeros(vecLen, dtype=np.float64)
+        self.dpdRow  = np.zeros(vecLen, dtype=np.float64)
+        self.dptRow  = np.zeros(vecLen, dtype=np.float64)
+        self.dedRow  = np.zeros(vecLen, dtype=np.float64)
+        self.detRow  = np.zeros(vecLen, dtype=np.float64)
+        self.dsdRow  = np.zeros(vecLen, dtype=np.float64)
+        self.dstRow  = np.zeros(vecLen, dtype=np.float64)
+        self.pelRow  = np.zeros(vecLen, dtype=np.float64)
+        self.neRow   = np.zeros(vecLen, dtype=np.float64)
+        self.etaRow  = np.zeros(vecLen, dtype=np.float64)
+        self.gamcRow = np.zeros(vecLen, dtype=np.float64)
+        self.cvRow   = np.zeros(vecLen, dtype=np.float64)
+        self.cpRow   = np.zeros(vecLen, dtype=np.float64)
 
         if extra_vars:
-            self._pradRow  = np.zeros(vecLen, dtype=np.float64)
-            self._pionRow  = np.zeros(vecLen, dtype=np.float64)
-            self._peleRow  = np.zeros(vecLen, dtype=np.float64)
-            self._pcoulRow = np.zeros(vecLen, dtype=np.float64)
+            self.pionRow  = np.zeros(vecLen, dtype=np.float64)
+            self.peleRow  = np.zeros(vecLen, dtype=np.float64)
+            self.pradRow  = np.zeros(vecLen, dtype=np.float64)
+            self.pcoulRow = np.zeros(vecLen, dtype=np.float64)
 
-            self._eradRow  = np.zeros(vecLen, dtype=np.float64)
-            self._eionRow  = np.zeros(vecLen, dtype=np.float64)
-            self._eeleRow  = np.zeros(vecLen, dtype=np.float64)
-            self._ecoulRow = np.zeros(vecLen, dtype=np.float64)
+            self.eionRow  = np.zeros(vecLen, dtype=np.float64)
+            self.eeleRow  = np.zeros(vecLen, dtype=np.float64)
+            self.eradRow  = np.zeros(vecLen, dtype=np.float64)
+            self.ecoulRow = np.zeros(vecLen, dtype=np.float64)
 
-            self._sradRow  = np.zeros(vecLen, dtype=np.float64)
-            self._sionRow  = np.zeros(vecLen, dtype=np.float64)
-            self._seleRow  = np.zeros(vecLen, dtype=np.float64)
-            self._scoulRow = np.zeros(vecLen, dtype=np.float64)
+            self.sionRow  = np.zeros(vecLen, dtype=np.float64)
+            self.seleRow  = np.zeros(vecLen, dtype=np.float64)
+            self.sradRow  = np.zeros(vecLen, dtype=np.float64)
+            self.scoulRow = np.zeros(vecLen, dtype=np.float64)
 
         if mode is EOS_MODE.DENS_TEMP:
             # Call helmholtz
             self.eos_helm(0, vecLen, extra_vars, coulomb_multiplier)
 
             # Set output
-            eosData[presStart:presStart+vecLen] = self._ptotRow
-            eosData[eintStart:eintStart+vecLen] = self._etotRow
-            eosData[gamcStart:gamcStart+vecLen] = self._gamcRow
-            eosData[entrStart:entrStart+vecLen] = self._stotRow
+            eosData[presStart:presStart+vecLen] = self.ptotRow
+            eosData[eintStart:eintStart+vecLen] = self.etotRow
+            eosData[gamcStart:gamcStart+vecLen] = self.gamcRow
+            eosData[entrStart:entrStart+vecLen] = self.stotRow
         elif mode is EOS_MODE.DENS_EI:
             # Desired EI
             ewant = eosData[eintStart:eintStart+vecLen]
@@ -260,17 +274,17 @@ class Helmholtz(object):
             self.eos_helm(0, vecLen, extra_vars, coulomb_multiplier)
 
             # Create initial condition
-            tnew = self._tempRow - (self._etotRow - ewant) / self._detRow
+            tnew = self.tempRow - (self.etotRow - ewant) / self.detRow
             # Don't allow the temperature to change by more than an order of magnitude
-            tnew = np.clip(tnew, 0.1 * self._tempRow, 10.0 * self._tempRow)
+            tnew = np.clip(tnew, 0.1 * self.tempRow, 10.0 * self.tempRow)
             # Compute the error
-            error = np.abs((tnew - self._tempRow) / self._tempRow)
+            error = np.abs((tnew - self.tempRow) / self.tempRow)
             # Store the new temperature
             # Make sure to copy, so that this does not just reference the same object
-            self._tempRow = tnew[:]
+            self.tempRow = tnew[:]
             # Check if we are freezing, if so set the temperature to smallt
             # and adjust the error so we don't wait for this one
-            self._tempRow[tnew < _EOS_SMALLT] = _EOS_SMALLT
+            self.tempRow[tnew < _EOS_SMALLT] = _EOS_SMALLT
             error[tnew < _EOS_SMALLT] = 0.1 * _EOS_TOL
 
             # Loop
@@ -282,44 +296,44 @@ class Helmholtz(object):
                     # Call helmholtz
                     self.eos_helm(k, 1, extra_vars, coulomb_multiplier)
 
-                    tnew[k] = self._tempRow[k] - (self._etotRow[k] - ewant[k]) / self._detRow[k]
+                    tnew[k] = self.tempRow[k] - (self.etotRow[k] - ewant[k]) / self.detRow[k]
 
                     # Don't allow the temperature to change by more than an order of magnitude
-                    tnew[k] = np.clip(tnew[k], 0.1 * self._tempRow[k], 10.0 * self._tempRow[k])
+                    tnew[k] = np.clip(tnew[k], 0.1 * self.tempRow[k], 10.0 * self.tempRow[k])
                     # Compute the error
-                    error[k] = np.abs((tnew[k] - self._tempRow[k]) / self._tempRow[k])
+                    error[k] = np.abs((tnew[k] - self.tempRow[k]) / self.tempRow[k])
 
                     # Store the new temperature
-                    self._tempRow[k] = tnew[k]
+                    self.tempRow[k] = tnew[k]
 
                     # Check if we are freezing, if so set the temperature to smallt
                     # and adjust the error so we don't wait for this one
-                    if self._tempRow[k] < _EOS_SMALLT:
-                        self._tempRow[k] = _EOS_SMALLT
+                    if self.tempRow[k] < _EOS_SMALLT:
+                        self.tempRow[k] = _EOS_SMALLT
                         error[k] = 0.1 * _EOS_TOL
                 else:  # If the Newton loop fails to converge
                     print("Newton-Raphson failed in subroutine eos_helmholtz")
                     print("(e and rho as input):")
                     print(f"Too many iterations: {_EOS_MAXNEWTON}")
                     print(f"k    = {k}, ({vecLen})")
-                    print(f"Temp = {self._tempRow[k]}")
-                    print(f"Dens = {self._densRow[k]}")
-                    print(f"Pres = {self._ptotRow[k]}")
+                    print(f"Temp = {self.tempRow[k]}")
+                    print(f"Dens = {self.densRow[k]}")
+                    print(f"Pres = {self.ptotRow[k]}")
 
                     raise RuntimeError("too many iterations in Helmholtz Eos")
 
             # Crank through the entire eos one last time
             self.eos_helm(0, vecLen, extra_vars, coulomb_multiplier)
 
-            eosData[tempStart:tempStart+vecLen] = self._tempRow
-            eosData[presStart:presStart+vecLen] = self._ptotRow
-            eosData[gamcStart:gamcStart+vecLen] = self._gamcRow
-            eosData[entrStart:entrStart+vecLen] = self._stotRow
+            eosData[tempStart:tempStart+vecLen] = self.tempRow
+            eosData[presStart:presStart+vecLen] = self.ptotRow
+            eosData[gamcStart:gamcStart+vecLen] = self.gamcRow
+            eosData[entrStart:entrStart+vecLen] = self.stotRow
 
             if force_constant_input:
                 eosData[eintStart:eintStart+vecLen] = ewant
             else:
-                eosData[eintStart:eintStart+vecLen] = self._etotRow
+                eosData[eintStart:eintStart+vecLen] = self.etotRow
         elif mode is EOS_MODE.DENS_PRES:
             # Desired PRES
             pwant = eosData[presStart:presStart+vecLen]
@@ -331,17 +345,17 @@ class Helmholtz(object):
             self.eos_helm(0, vecLen, extra_vars, coulomb_multiplier)
 
             # Create initial condition
-            tnew = self._tempRow - (self._ptotRow - pwant) / self._dptRow
+            tnew = self.tempRow - (self.ptotRow - pwant) / self.dptRow
             # Don't allow the temperature to change by more than an order of magnitude
-            tnew = np.clip(tnew, 0.1 * self._tempRow, 10.0 * self._tempRow)
+            tnew = np.clip(tnew, 0.1 * self.tempRow, 10.0 * self.tempRow)
             # Compute the error
-            error = np.abs((tnew - self._tempRow) / self._tempRow)
+            error = np.abs((tnew - self.tempRow) / self.tempRow)
             # Store the new temperature
             # Make sure to copy, so that this does not just reference the same object
-            self._tempRow = tnew[:]
+            self.tempRow = tnew[:]
             # Check if we are freezing, if so set the temperature to smallt
             # and adjust the error so we don't wait for this one
-            self._tempRow[tnew < _EOS_SMALLT] = _EOS_SMALLT
+            self.tempRow[tnew < _EOS_SMALLT] = _EOS_SMALLT
             error[tnew < _EOS_SMALLT] = 0.1 * _EOS_TOL
 
             # Loop
@@ -353,45 +367,45 @@ class Helmholtz(object):
                     # Call helmholtz
                     eos_helm(k, 1, extra_vars, coulomb_multiplier)
 
-                    tnew[k] = self._tempRow[k] - (self._ptotRow[k] - pwant[k]) / self._dptRow[k]
+                    tnew[k] = self.tempRow[k] - (self.ptotRow[k] - pwant[k]) / self.dptRow[k]
 
                     # Don't allow the temperature to change by more than an order of magnitude
-                    tnew[k] = np.clip(tnew[k], 0.1 * self._tempRow[k], 10.0 * self._tempRow[k])
+                    tnew[k] = np.clip(tnew[k], 0.1 * self.tempRow[k], 10.0 * self.tempRow[k])
 
                     # Compute the error
-                    error[k] = np.abs((tnew[k] - self._tempRow[k]) / self._tempRow[k])
+                    error[k] = np.abs((tnew[k] - self.tempRow[k]) / self.tempRow[k])
 
                     # Store the new temperature
-                    self._tempRow[k] = tnew[k]
+                    self.tempRow[k] = tnew[k]
 
                     # Check if we are freezing, if so set the temperature to smallt
                     # and adjust the error so we don't wait for this one
-                    if self._tempRow[k] < _EOS_SMALLT:
-                        self._tempRow[k] = _EOS_SMALLT
+                    if self.tempRow[k] < _EOS_SMALLT:
+                        self.tempRow[k] = _EOS_SMALLT
                         error[k] = 0.1 * _EOS_TOL
                 else:  # If the Newton loop fails to converge
                     print("Newton-Raphson failed in subroutine eos_helmholtz")
                     print("(e and rho as input):")
                     print(f"Too many iterations: {_EOS_MAXNEWTON}")
                     print(f"k    = {k}, ({vecLen})")
-                    print(f"Temp = {self._tempRow[k]}")
-                    print(f"Dens = {self._densRow[k]}")
-                    print(f"Pres = {self._ptotRow[k]}")
+                    print(f"Temp = {self.tempRow[k]}")
+                    print(f"Dens = {self.densRow[k]}")
+                    print(f"Pres = {self.ptotRow[k]}")
 
                     raise RuntimeError("too many iterations in Helmholtz Eos")
 
             # Crank through the entire eos one last time
             self.eos_helm(0, vecLen, extra_vars, coulomb_multiplier)
     
-            eosData[tempStart:tempStart+vecLen] = self._tempRow
-            eosData[gamcStart:gamcStart+vecLen] = self._gamcRow
-            eosData[eintStart:eintStart+vecLen] = self._etotRow
-            eosData[entrStart:entrStart+vecLen] = self._stotRow
+            eosData[tempStart:tempStart+vecLen] = self.tempRow
+            eosData[gamcStart:gamcStart+vecLen] = self.gamcRow
+            eosData[eintStart:eintStart+vecLen] = self.etotRow
+            eosData[entrStart:entrStart+vecLen] = self.stotRow
 
             if force_constant_input:
                 eosData[presStart:presStart+vecLen] = pwant
             else:
-                eosData[presStart:presStart+vecLen] = self._ptotRow
+                eosData[presStart:presStart+vecLen] = self.ptotRow
         else:
             raise RuntimeError('Unknown EOS mode')
 
@@ -410,19 +424,19 @@ class Helmholtz(object):
         cvStart  = EOS_VAR.CV  * vecLen
         cpStart  = EOS_VAR.CP  * vecLen
 
-        eosData[dstStart:dstStart + vecLen] = self._dstRow
-        eosData[dsdStart:dsdStart + vecLen] = self._dsdRow
-        eosData[dptStart:dptStart + vecLen] = self._dptRow
-        eosData[dpdStart:dpdStart + vecLen] = self._dpdRow
-        eosData[detStart:detStart + vecLen] = self._detRow
-        eosData[dedStart:dedStart + vecLen] = self._dedRow
+        eosData[dstStart:dstStart + vecLen] = self.dstRow
+        eosData[dsdStart:dsdStart + vecLen] = self.dsdRow
+        eosData[dptStart:dptStart + vecLen] = self.dptRow
+        eosData[dpdStart:dpdStart + vecLen] = self.dpdRow
+        eosData[detStart:detStart + vecLen] = self.detRow
+        eosData[dedStart:dedStart + vecLen] = self.dedRow
         eosData[deaStart:deaStart + vecLen] = 0.0 # deaRow
         eosData[dezStart:dezStart + vecLen] = 0.0 # dezRow
-        eosData[pelStart:pelStart + vecLen] = self._pelRow
-        eosData[neStart :neStart  + vecLen] = self._neRow
-        eosData[etaStart:etaStart + vecLen] = self._etaRow
-        eosData[cvStart :cvStart  + vecLen] = self._cvRow
-        eosData[cpStart :cpStart  + vecLen] = self._cpRow
+        eosData[pelStart:pelStart + vecLen] = self.pelRow
+        eosData[neStart :neStart  + vecLen] = self.neRow
+        eosData[etaStart:etaStart + vecLen] = self.etaRow
+        eosData[cvStart :cvStart  + vecLen] = self.cvRow
+        eosData[cpStart :cpStart  + vecLen] = self.cpRow
 
         if extra_vars:
             extraData = np.zeros(EOS_VAR.NUM_EXTRA*vecLen, dtype=np.float64)
@@ -442,20 +456,20 @@ class Helmholtz(object):
             seleStart  = EOS_VAR.SELE  * vecLen
             scoulStart = EOS_VAR.SCOUL * vecLen
 
-            extraData[pradStart :pradStart  + vecLen] = self._pradRow
-            extraData[pionStart :pionStart  + vecLen] = self._pionRow
-            extraData[peleStart :peleStart  + vecLen] = self._peleRow
-            extraData[pcoulStart:pcoulStart + vecLen] = self._pcoulRow
+            extraData[pionStart :pionStart  + vecLen] = self.pionRow
+            extraData[peleStart :peleStart  + vecLen] = self.peleRow
+            extraData[pradStart :pradStart  + vecLen] = self.pradRow
+            extraData[pcoulStart:pcoulStart + vecLen] = self.pcoulRow
             
-            extraData[eradStart :eradStart  + vecLen] = self._eradRow
-            extraData[eionStart :eionStart  + vecLen] = self._eionRow
-            extraData[eeleStart :eeleStart  + vecLen] = self._eeleRow
-            extraData[ecoulStart:ecoulStart + vecLen] = self._ecoulRow
+            extraData[eionStart :eionStart  + vecLen] = self.eionRow
+            extraData[eeleStart :eeleStart  + vecLen] = self.eeleRow
+            extraData[eradStart :eradStart  + vecLen] = self.eradRow
+            extraData[ecoulStart:ecoulStart + vecLen] = self.ecoulRow
             
-            extraData[sradStart :sradStart  + vecLen] = self._sradRow
-            extraData[sionStart :sionStart  + vecLen] = self._sionRow
-            extraData[seleStart :seleStart  + vecLen] = self._seleRow
-            extraData[scoulStart:scoulStart + vecLen] = self._scoulRow
+            extraData[sionStart :sionStart  + vecLen] = self.sionRow
+            extraData[seleStart :seleStart  + vecLen] = self.seleRow
+            extraData[sradStart :sradStart  + vecLen] = self.sradRow
+            extraData[scoulStart:scoulStart + vecLen] = self.scoulRow
 
         if extra_vars:
             return eosData, extraData
@@ -474,10 +488,10 @@ class Helmholtz(object):
 
         for i in range(first, first+vecLen):
             # Main quantities
-            dens  = self._densRow[i]
-            temp  = self._tempRow[i]
-            abar  = self._abarRow[i]
-            zbar  = self._zbarRow[i]
+            dens  = self.densRow[i]
+            temp  = self.tempRow[i]
+            abar  = self.abarRow[i]
+            zbar  = self.zbarRow[i]
             Ye    = zbar/abar
 
             # frequent combinations
@@ -862,34 +876,34 @@ class Helmholtz(object):
             cp    = cv*gamc/chid
 
             # store the output
-            self._ptotRow[i] = pres         # used by Eos as EOS_PRES = PRES_VAR
-            self._etotRow[i] = ener         # used by Eos as EOS_EINT = EINT_VAR
-            self._stotRow[i] = entr/KERGAVO # this is entropy, used by Eos as EOS_ENTR (masked)
-            self._dpdRow[i]  = dpresdd  # used as EOS_DPD
-            self._dptRow[i]  = dpresdt  # used as EOS_DPT  ALWAYS used by MODE_DENS_PRES in Eos.F90
-            self._dedRow[i]  = denerdd  # used as EOS_DED
-            self._detRow[i]  = denerdt  # used as EOS_DET  ALWAYS used by MODE_DENS_EI in Eos.F90
-            self._dsdRow[i]  = dentrdd  # used as EOS_DSD
-            self._dstRow[i]  = dentrdt  # used as EOS_DST
-            self._pelRow[i]  = pele     # used as EOS_PEL
-            self._neRow[i]   = xnefer   # used as EOS_NE
-            self._etaRow[i]  = etaele   # used as EOS_ETA 
-            self._gamcRow[i] = gamc     # used as EOS_GAMC = GAMC_VAR
-            self._cvRow[i]   = cv       # EOS_CV
-            self._cpRow[i]   = cp       # EOS_CP
+            self.ptotRow[i] = pres         # used by Eos as EOS_PRES = PRES_VAR
+            self.etotRow[i] = ener         # used by Eos as EOS_EINT = EINT_VAR
+            self.stotRow[i] = entr/KERGAVO # this is entropy, used by Eos as EOS_ENTR (masked)
+            self.dpdRow[i]  = dpresdd  # used as EOS_DPD
+            self.dptRow[i]  = dpresdt  # used as EOS_DPT  ALWAYS used by MODE_DENS_PRES in Eos.F90
+            self.dedRow[i]  = denerdd  # used as EOS_DED
+            self.detRow[i]  = denerdt  # used as EOS_DET  ALWAYS used by MODE_DENS_EI in Eos.F90
+            self.dsdRow[i]  = dentrdd  # used as EOS_DSD
+            self.dstRow[i]  = dentrdt  # used as EOS_DST
+            self.pelRow[i]  = pele     # used as EOS_PEL
+            self.neRow[i]   = xnefer   # used as EOS_NE
+            self.etaRow[i]  = etaele   # used as EOS_ETA 
+            self.gamcRow[i] = gamc     # used as EOS_GAMC = GAMC_VAR
+            self.cvRow[i]   = cv       # EOS_CV
+            self.cpRow[i]   = cp       # EOS_CP
 
             if extra_vars:
-                self._pradRow[i]  = prad
-                self._pionRow[i]  = pion
-                self._peleRow[i]  = pele
-                self._pcoulRow[i] = pcoul
+                self.pionRow[i]  = pion
+                self.peleRow[i]  = pele
+                self.pradRow[i]  = prad
+                self.pcoulRow[i] = pcoul
 
-                self._eradRow[i]  = erad
-                self._eionRow[i]  = eion
-                self._eeleRow[i]  = eele
-                self._ecoulRow[i] = ecoul
+                self.eionRow[i]  = eion
+                self.eeleRow[i]  = eele
+                self.eradRow[i]  = erad
+                self.ecoulRow[i] = ecoul
 
-                self._sradRow[i]  = srad
-                self._sionRow[i]  = sion
-                self._seleRow[i]  = sele
-                self._scoulRow[i] = scoul
+                self.sionRow[i]  = sion
+                self.seleRow[i]  = sele
+                self.sradRow[i]  = srad
+                self.scoulRow[i] = scoul
