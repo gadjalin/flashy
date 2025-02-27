@@ -15,7 +15,6 @@ version = "0.1a_dev0"
 description = "A package for performing various FLASH related tasks."
 readme = "README.md"
 license = {file = "LICENSE"}
-license-files = ["LICENSE*", "AUTHORS.md"]
 dependencies = [ "numpy>=2.0.0" ]
 maintainers = [
     {name = "Gaétan J.A.M. Jalin", email = "gaetan.jalin@tu-darmstadt.de"}
