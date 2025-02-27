@@ -28,12 +28,12 @@ _PLOT_LABELS = { \
     'etot'             : ( r'$e_\text{tot}$',      r'$\mathrm{erg\,g^{-1}}$',        True  ), \
     'velx'             : ( r'$v$',                 r'$\mathrm{cm\,s^{-1}}$',         False ), \
     'vrad'             : ( r'$v_\text{rad}$',      r'$\mathrm{cm\,s^{-1}}$',         False ), \
-    'eexp'             : ( r'$E_\text{exp}$',      r'$\mathrm{erg}$',                True  ), \
+    'eexp'             : ( r'$E_\text{exp}$',      r'$\mathrm{erg}$',                False ), \
     'min_shock_radius' : ( r'$r_\text{sh}$',       r'$\mathrm{cm}$',                 True  ), \
     'mean_shock_radius': ( r'$r_\text{sh}$',       r'$\mathrm{cm}$',                 True  ), \
     'max_shock_radius' : ( r'$r_\text{sh}$',       r'$\mathrm{cm}$',                 True  ), \
     'shock_vel'        : ( r'$v_\text{sh}$',       r'$\mathrm{cm\,s^{-1}}$',         False ), \
-    'explosion_energy' : ( r'$E_\text{exp}$',      r'$\mathrm{erg}$',                True  ), \
+    'explosion_energy' : ( r'$E_\text{exp}$',      r'$\mathrm{erg}$',                False ), \
     'point_mass'       : ( r'$m_\text{point}$',    r'$\mathrm{g}$',                  False ), \
     'neutron_star_mass': ( r'$M_\text{NS}$',       r'$M_\odot$',                     False ), \
     'central_density'  : ( r'$\rho_\text{c}$',     r'$\mathrm{g\,cm^{-3}}$',         True  ), \
