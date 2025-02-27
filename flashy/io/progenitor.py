@@ -60,6 +60,27 @@ class Progenitor(object):
         self.__checkloaded()
         return self.__columns.copy()
 
+    def cells(self):
+        """
+        Get the number of cells in the progenitor.
+        """
+        self.__checkloaded()
+        return len(self.__data['r'])
+
+    def comment(self):
+        """
+        Get the comment associated with this progenitor
+        """
+        self.__checkloaded()
+        return self.__comment
+
+    def set_comment(self, comment: str):
+        """
+        Set the comment associated with this progenitor
+        """
+        self.__checkloaded()
+        self.__comment = comment
+
     def __getitem__(self, index):
         return self.get(index)
 
@@ -161,6 +182,7 @@ class Progenitor(object):
 
         # Call parser and get data
         self.__comment, data = file_parser(filename)
+        self.__comment = self.__comment.strip()
 
         # Remove unwanted columns
         for exvar in exclude_vars:
@@ -227,11 +249,11 @@ class Progenitor(object):
             If no data has been loaded in memory yet.
         """
         self.__checkloaded()
-        assert 'r' in self._data.dtype.names, 'Progenitor must have a radial profile!'
+        assert 'r' in self.__data.dtype.names, 'Progenitor must have a radial profile!'
         
         with open(filename, 'w') as f:
             print("#", self.__comment, file=f)
-            print("number of variables =", len(self.__data) - 1, file=f)
+            print("number of variables =", len(self.__data.dtype.names) - 1, file=f)
 
             # Don't print the 'r' var name
             for var_name in self.__columns[1:]:
@@ -262,7 +284,7 @@ def flash_parser(filename):
         # Read comment on first line if any
         if (line.startswith('#')):
             data_start += 1
-            comment = line
+            comment = line[1:]
             line = f.readline()
         # Read "number of variables" line
         num_vars = int(line.split()[-1])
