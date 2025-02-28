@@ -13,36 +13,36 @@ class _LabelMap(IntEnum):
 
 
 _PLOT_LABELS = { \
-#   VARNAME            : ( LABEL,                  UNITS,                            LOG PREFERENCES )
-    't'                : ( r'$t$',                 r'$\mathrm{s}$',                  False ), \
-    'time'             : ( r'$t$',                 r'$\mathrm{s}$',                  False ), \
-    'r'                : ( r'$r$',                 r'$\mathrm{cm}$',                 True  ), \
-    'radius'           : ( r'$r$',                 r'$\mathrm{cm}$',                 True  ), \
-    'm'                : ( r'$M$',                 r'$M_\odot$',                     False ), \
-    'mass'             : ( r'$M$',                 r'$M_\odot$',                     False ), \
-    'dens'             : ( r'$\rho$',              r'$\mathrm{g\,cm^{-3}}$',         True  ), \
-    'temp'             : ( r'$T$',                 r'$\mathrm{K}$',                  True  ), \
-    'eint'             : ( r'$e_\text{int}$',      r'$\mathrm{erg\,g^{-1}}$',        True  ), \
-    'ekin'             : ( r'$e_\text{kin}$',      r'$\mathrm{erg\,g^{-1}}$',        True  ), \
-    'ener'             : ( r'$e_\text{tot}$',      r'$\mathrm{erg\,g^{-1}}$',        True  ), \
-    'etot'             : ( r'$e_\text{tot}$',      r'$\mathrm{erg\,g^{-1}}$',        True  ), \
-    'velx'             : ( r'$v$',                 r'$\mathrm{cm\,s^{-1}}$',         False ), \
-    'vrad'             : ( r'$v_\text{rad}$',      r'$\mathrm{cm\,s^{-1}}$',         False ), \
-    'eexp'             : ( r'$E_\text{exp}$',      r'$\mathrm{erg}$',                False ), \
-    'min_shock_radius' : ( r'$r_\text{sh}$',       r'$\mathrm{cm}$',                 True  ), \
-    'mean_shock_radius': ( r'$r_\text{sh}$',       r'$\mathrm{cm}$',                 True  ), \
-    'max_shock_radius' : ( r'$r_\text{sh}$',       r'$\mathrm{cm}$',                 True  ), \
-    'shock_vel'        : ( r'$v_\text{sh}$',       r'$\mathrm{cm\,s^{-1}}$',         False ), \
-    'explosion_energy' : ( r'$E_\text{exp}$',      r'$\mathrm{erg}$',                False ), \
-    'point_mass'       : ( r'$m_\text{point}$',    r'$\mathrm{g}$',                  False ), \
-    'neutron_star_mass': ( r'$M_\text{NS}$',       r'$M_\odot$',                     False ), \
-    'central_density'  : ( r'$\rho_\text{c}$',     r'$\mathrm{g\,cm^{-3}}$',         True  ), \
-    'pres'             : ( r'$P$',                 r'$\mathrm{g\,cm^{-1}\,s^{-2}}$', True  ), \
-    'entr'             : ( r'$s$',                 r'$k_B\,\mathrm{baryon^{-1}}$',   False ), \
-    'ye'               : ( r'$Y_e$',               None,                             False ), \
-    'sumy'             : ( r'SumY',                None,                             False ), \
-    'abar'             : ( r'$\mathcal{\bar{A}}$', None,                             False ), \
-    'zbar'             : ( r'$\mathcal{\bar{Z}}$', None,                             False ), \
+#   VARNAME            : ( LABEL,                    UNITS,                            LOG PREFERENCES )
+    't'                : ( r'$t$',                   r'$\mathrm{s}$',                  False ), \
+    'time'             : ( r'$t$',                   r'$\mathrm{s}$',                  False ), \
+    'r'                : ( r'$r$',                   r'$\mathrm{cm}$',                 True  ), \
+    'radius'           : ( r'$r$',                   r'$\mathrm{cm}$',                 True  ), \
+    'm'                : ( r'$M$',                   r'$M_\odot$',                     False ), \
+    'mass'             : ( r'$M$',                   r'$M_\odot$',                     False ), \
+    'dens'             : ( r'$\rho$',                r'$\mathrm{g\,cm^{-3}}$',         True  ), \
+    'temp'             : ( r'$T$',                   r'$\mathrm{K}$',                  True  ), \
+    'eint'             : ( r'$e_\mathrm{int}$',      r'$\mathrm{erg\,g^{-1}}$',        True  ), \
+    'ekin'             : ( r'$e_\mathrm{kin}$',      r'$\mathrm{erg\,g^{-1}}$',        True  ), \
+    'ener'             : ( r'$e_\mathrm{tot}$',      r'$\mathrm{erg\,g^{-1}}$',        True  ), \
+    'etot'             : ( r'$e_\mathrm{tot}$',      r'$\mathrm{erg\,g^{-1}}$',        True  ), \
+    'velx'             : ( r'$v$',                   r'$\mathrm{cm\,s^{-1}}$',         False ), \
+    'vrad'             : ( r'$v_\mathrm{rad}$',      r'$\mathrm{cm\,s^{-1}}$',         False ), \
+    'eexp'             : ( r'$E_\mathrm{exp}$',      r'$\mathrm{erg}$',                False ), \
+    'min_shock_radius' : ( r'$r_\mathrm{sh}$',       r'$\mathrm{cm}$',                 True  ), \
+    'mean_shock_radius': ( r'$r_\mathrm{sh}$',       r'$\mathrm{cm}$',                 True  ), \
+    'max_shock_radius' : ( r'$r_\mathrm{sh}$',       r'$\mathrm{cm}$',                 True  ), \
+    'shock_vel'        : ( r'$v_\mathrm{sh}$',       r'$\mathrm{cm\,s^{-1}}$',         False ), \
+    'explosion_energy' : ( r'$E_\mathrm{exp}$',      r'$\mathrm{erg}$',                False ), \
+    'point_mass'       : ( r'$m_\mathrm{point}$',    r'$\mathrm{g}$',                  False ), \
+    'neutron_star_mass': ( r'$M_\mathrm{NS}$',       r'$M_\odot$',                     False ), \
+    'central_density'  : ( r'$\rho_\mathrm{c}$',     r'$\mathrm{g\,cm^{-3}}$',         True  ), \
+    'pres'             : ( r'$P$',                   r'$\mathrm{g\,cm^{-1}\,s^{-2}}$', True  ), \
+    'entr'             : ( r'$s$',                   r'$k_B\,\mathrm{baryon^{-1}}$',   False ), \
+    'ye'               : ( r'$Y_e$',                 None,                             False ), \
+    'sumy'             : ( r'SumY',                  None,                             False ), \
+    'abar'             : ( r'$\mathcal{\bar{A}}$',   None,                             False ), \
+    'zbar'             : ( r'$\mathcal{\bar{Z}}$',   None,                             False ), \
 }
 
 
