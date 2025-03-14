@@ -86,6 +86,16 @@ def parse_isotope_id(isotope: str) -> tuple[int, int]:
         If the isotope string cannot be parsed;
     """
 
+    # Special cases
+    if isotope.lower() in ['n', 'neut', 'neutron']:
+        return 0, 1
+    if isotope.lower() in ['p', 'h']:
+        return 1, 1
+    if isotope.lower() in ['d', 'deut']:
+        return 1, 2
+    if isotope.lower() in ['t']:
+        return 1, 3
+
     match = re.match(r'^([^\d]*)(.*)$', isotope)
     if match is None:
         raise ValueError(f'Unrecognised isotope: {isotope}')
@@ -93,9 +103,6 @@ def parse_isotope_id(isotope: str) -> tuple[int, int]:
     name = match[1]
     weight = match[2]
     Z = get_charge(name)
-    
-    if isotope.lower() == 'h': #Hydrogen 1 may omit atomic weight
-        return 1, 1
 
     A_parsed = int(weight)
     if (A_parsed < 100):
@@ -119,3 +126,7 @@ def parse_isotope_id(isotope: str) -> tuple[int, int]:
         A = A_parsed
 
     return Z, A
+
+def sort_isotope(isotope):
+    Z, A = parse_isotope_id(isotope)
+    return (Z, A)

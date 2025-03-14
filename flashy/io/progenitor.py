@@ -208,7 +208,7 @@ class Progenitor(object):
         
         self.__loaded = True
 
-    def set_data(r, data, comment: str = "") -> None:
+    def set_data(self, r, data, comment: str = "") -> None:
         """
         Set the data describing the progenitor.
         
@@ -227,9 +227,10 @@ class Progenitor(object):
             An additional comment to be used when saving to a file.
         """
         self.clear()
-        
+
+        self.__comment = comment
         self.__columns = np.concatenate((np.atleast_1d('r'), np.atleast_1d(list(data.keys()))))
-        dtype = [(key, float) for key in data.keys()]
+        dtype = [(key, float) for key in self.__columns]
         self.__data = np.array(list(zip(r, *data.values())), dtype=dtype)
 
         self.__loaded = True
@@ -260,7 +261,7 @@ class Progenitor(object):
                 print(var_name, file=f)
     
             for i in range(len(self.__data['r'])):
-                print(self.__data['r'][i], *[self.__data[var_name][i] for var_name in self.__columns], file=f)
+                print(*[self.__data[var_name][i] for var_name in self.__columns], file=f)
 
     def clear(self):
         """
