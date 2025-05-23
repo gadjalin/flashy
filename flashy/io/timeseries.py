@@ -152,20 +152,20 @@ class TimeSeries1D(object):
 
     def write_save(self, save_file):
         with h5py.File(save_file, 'w') as f:
-            for ds in self.__all_data:
-                source_index = ds.attrs['source_file'][-4:]
+            for xds in self.__all_data:
+                source_index = xds.attrs['source_file'][-4:]
                 grp = f.create_group(f"{source_index}")
 
-                for attr in ds.attrs:
-                    grp.attrs[attr] = ds.attrs[attr]
+                for attr in xds.attrs:
+                    grp.attrs[attr] = xds.attrs[attr]
 
-                for field in ds.data_vars:
-                    data = ds[field].values
+                for field in xds.data_vars:
+                    data = xds[field].values
                     grp.create_dataset(field, data=data, compression=None)
 
-                for coord in ds.coords:
-                    if coord not in ds.data_vars:
-                        data = ds[coord].values
+                for coord in xds.coords:
+                    if coord not in xds.data_vars:
+                        data = xds[coord].values
                         grp.create_dataset(coord, data=data, compression=None)
 
     def clear(self) -> None:
@@ -197,6 +197,8 @@ class TimeSeries1D(object):
         return field_list
 
     def _sanitise_attr_list(self, attr_list):
+        if attr_list is None:
+            attr_list = []
         if 'time' in attr_list:
             attr_list.remove('time')
 
