@@ -3,13 +3,18 @@ import re
 
 
 class DatRun(object):
+    __source_file: str
     __data: np.ndarray
 
-    def __init__(self, data):
+    def __init__(self, data, source):
+        self.__source_file = source
         self.__data = np.atleast_1d(data.copy())
 
     def __getitem__(self, index):
         return self.get(index)
+
+    def __str__(self):
+        return f'DatRun @ {self.__source_file}; {len(self.__data.dtype.names)} columns; {len(self.__data)} rows;'
 
     def get(self, index):
         if isinstance(index, (int, slice)):
@@ -44,6 +49,7 @@ class DatFile(object):
     the data from each run are split into different lists.
     """
 
+    __source_file: str
     __columns: np.ndarray
     __runs: list
     __loaded: bool
@@ -68,6 +74,9 @@ class DatFile(object):
 
     def __getitem__(self, index):
         return self.get_run(index)
+
+    def __str__(self):
+        return f'DatFile @ {self.__source_file}; {len(self.__runs)} runs; {len(self.__columns)} columns;'
 
     def columns(self):
         """
@@ -97,7 +106,7 @@ class DatFile(object):
             constructor or the readfile method.
         """
         self.__checkloaded()
-        return DatRun(np.concatenate([datrun.data() for datrun in self.__runs]))
+        return DatRun(np.concatenate([datrun.data() for datrun in self.__runs]), self.__source_file)
 
     def get_run(self, runs, no_overlap: bool = False):
         """
@@ -144,9 +153,9 @@ class DatFile(object):
         if no_overlap:
             cutoffs = np.array([run['time'][0] for run in runlist])[1:]
             cutoffs.append(runlist[-1]['time'][-1] + 1e-6)
-            return DatRun(np.concatenate([run.data()[run['time'] < cutoff] for run,cutoff in zip(runlist, cutoffs)]))
+            return DatRun(np.concatenate([run.data()[run['time'] < cutoff] for run,cutoff in zip(runlist, cutoffs)]), self.__source_file)
         else:
-            return DatRun(np.concatenate([run.data() for run in runlist], axis=0))
+            return DatRun(np.concatenate([run.data() for run in runlist], axis=0), self.__source_file)
 
     def read_file(self, filename) -> None:
         """
@@ -162,27 +171,35 @@ class DatFile(object):
         with open(filename, 'r') as f:
             l = f.readline().strip()
 
-        # Read column headers. Strip the number at the beginning and save the name
-        offset = 26
-        width = 25
-        # First column begins with a #
-        columns = []
-        columns.append(re.sub(r'^\d+\s*', '', l[1:width]).strip())
-
-        # Read the other columns
-        while (offset + width < len(l)):
-            column = re.sub(r'^\d+\s*', '', l[offset:offset+width].strip()).strip()
-            columns.append(column)
-            offset += width+1
-
-        # Read last one to avoid indexing line out of bounds
-        column = re.sub(r'^\d+\s*', '', l[offset:].strip()).strip()
-        if len(column) > 0:
-            columns.append(column)
+        no_header = False
+        # First line is header
+        if l.startswith('#'):
+            # Read column headers. Strip the number at the beginning and save the name
+            offset = 26
+            width = 25
+            # First column begins with a #
+            columns = []
+            columns.append(re.sub(r'^\d+\s*', '', l[1:width]).strip())
+    
+            # Read the other columns
+            while (offset + width < len(l)):
+                column = re.sub(r'^\d+\s*', '', l[offset:offset+width].strip()).strip()
+                columns.append(column)
+                offset += width+1
+    
+            # Read last one to avoid indexing line out of bounds
+            column = re.sub(r'^\d+\s*', '', l[offset:].strip()).strip()
+            if len(column) > 0:
+                columns.append(column)
+        else:
+            # File is missing an header. Just parse the number of available columns.
+            n_column = len(l.split())
+            columns = [f'{i+1}' for i in range(n_column)]
+            no_header = True
 
         with open(filename, 'r') as f:
             nline = 0
-            run_starts = None
+            run_starts = 1 if no_header else None
             for line in f:
                 nline += 1
                 
@@ -198,7 +215,7 @@ class DatFile(object):
                                 skip_header=run_starts,
                                 max_rows=nline-run_starts-1
                             )
-                            self.__runs.append(DatRun(data))
+                            self.__runs.append(DatRun(data, filename))
 
                         run_starts = nline
                     else:
@@ -214,12 +231,13 @@ class DatFile(object):
                         encoding='ascii',
                         skip_header=run_starts
                     )
-                    self.__runs.append(DatRun(data))
+                    self.__runs.append(DatRun(data, filename))
 
             # Update column names to match python compliants one (_ instead of spaces and - etc)
             self.__columns = self.__runs[0].columns()
 
             if len(self.__runs) > 0:
+                self.__source_file = filename
                 self.__loaded = True
             else:
                 # Nothing was found in the dat file
@@ -230,3 +248,4 @@ class DatFile(object):
         self.__columns = np.empty(0)
         self.__runs = []
         self.__loaded = False
+

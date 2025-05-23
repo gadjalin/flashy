@@ -17,6 +17,7 @@ _PLOT_LABELS = { \
     't'                : ( r'$t$',                   r'$\mathrm{s}$',                  False ), \
     'time'             : ( r'$t$',                   r'$\mathrm{s}$',                  False ), \
     'r'                : ( r'$r$',                   r'$\mathrm{cm}$',                 True  ), \
+    'dr'               : ( r'$\mathrm{d}r$',         r'$\mathrm{cm}$',                 True  ), \
     'radius'           : ( r'$r$',                   r'$\mathrm{cm}$',                 True  ), \
     'm'                : ( r'$M$',                   r'$M_\odot$',                     False ), \
     'mass'             : ( r'$M$',                   r'$M_\odot$',                     False ), \
