@@ -143,6 +143,7 @@ class Progenitor(object):
             Alternatively, the following string values can be used
             - 'flash' or 'default': default flash parser
             - 'mesa': parser for MESA log profiles
+            - 'kepler': parser for KEPLER profiles
         include_vars : list[str]
             A list of required variable names.
             All other variables are discarded.
@@ -165,6 +166,8 @@ class Progenitor(object):
                 file_parser = flash_parser
             elif parser == 'mesa':
                 file_parser = mesa_parser
+            elif parser == 'kepler':
+                file_parser = kepler_parser
             else:
                 raise RuntimeError(f'Unknown parser: {parser}')
         elif isinstance(parser, Callable):
@@ -175,7 +178,7 @@ class Progenitor(object):
         # Check if a variable is in both include_vars and exclude_vars
         for invar in include_vars:
             if invar in exclude_vars:
-                raise RuntimeError(f'Ambiguous variable {invar} is both included and excluded')
+                raise RuntimeError(f'Ambiguous variable {invar} found in both included and excluded variables')
 
         # Reset state and clear data
         self.clear()
@@ -309,5 +312,26 @@ def flash_parser(filename):
     return comment, data
 
 
-def mesa_parser(filename, include_vars = None, exclude_vars = None):
-    raise NotImplementedError('MESA parser')
+def mesa_parser(filename):
+    comment = ''
+    data = {}
+
+    # Read data after header and column numbers (5 lines)
+    array_data = np.genfromtxt(
+        fname=filename,
+        skip_header=5,
+        names=True,
+        dtype=None,
+        encoding='ascii'
+    )
+
+    # Reorder cells from core to surface
+    for name in array_data.dtype.names:
+        array_data[name] = np.flip(array_data[name])
+
+    data = {var: array_data[var] for var in array_data.dtype.names}
+
+    return comment, data
+
+def kepler_parser(filename):
+    raise NotImplementedError('KEPLER parser')
