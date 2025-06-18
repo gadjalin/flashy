@@ -31,6 +31,7 @@ class TimeSeries1D(object):
             files = glob(path + '/*' + basename + '*plt_cnt*')
         else:
             files = glob(path + '/*plt_cnt*')
+        files = [f for f in files if 'forced' not in f] # Exclude 'forced' plot files from restarts
         files.sort()
         obj.read_files(files, field_list, attr_list)
         return obj
@@ -65,6 +66,9 @@ class TimeSeries1D(object):
 
     def size(self):
         return len(self.__times)
+
+    def times(self):
+        return np.array(self.__times)
 
     def read_files(self, files, field_list = None, attr_list = None):
         yt.set_log_level('error')

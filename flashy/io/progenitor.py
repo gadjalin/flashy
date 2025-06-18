@@ -12,6 +12,7 @@ class Progenitor(object):
     """
 
     # Private fields
+    __source_file: str
     __comment: str
     __columns: np.ndarray
     __data: np.ndarray
@@ -52,6 +53,9 @@ class Progenitor(object):
     def __checkloaded(self) -> None:
         if not self.__loaded:
             raise RuntimeError('No progenitor has been stored yet!')
+
+    def __str__(self) -> str:
+        return f'Progenitor @ {self.__source_file}; {self.__comment}; {len(self.__columns)} vars, {self.cells()} cells'
 
     def columns(self):
         """
@@ -209,6 +213,7 @@ class Progenitor(object):
         dtype = [(key, float) for key in data.keys()]
         self.__data = np.array(list(zip(*data.values())), dtype=dtype)
         
+        self.__source_file = filename
         self.__loaded = True
 
     def set_data(self, r, data, comment: str = "") -> None:
@@ -236,6 +241,7 @@ class Progenitor(object):
         dtype = [(key, float) for key in self.__columns]
         self.__data = np.array(list(zip(r, *data.values())), dtype=dtype)
 
+        self.__source_file = 'UNSAVED'
         self.__loaded = True
 
     def save_file(self, filename):
@@ -266,12 +272,15 @@ class Progenitor(object):
             for i in range(len(self.__data['r'])):
                 print(*[self.__data[var_name][i] for var_name in self.__columns], file=f)
 
+        self.__source_file = filename
+
     def clear(self):
         """
         Restore the object to its default, empty state.
         
         Clear all data from memory.
         """
+        self.__source_file = ''
         self.__comment = ''
         self.__columns = np.empty(0)
         self.__data = np.empty(0)

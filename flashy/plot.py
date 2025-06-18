@@ -30,6 +30,7 @@ _PLOT_LABELS = { \
     'velx'             : ( r'$v$',                   r'$\mathrm{cm\,s^{-1}}$',         False ), \
     'vrad'             : ( r'$v_\mathrm{rad}$',      r'$\mathrm{cm\,s^{-1}}$',         False ), \
     'eexp'             : ( r'$E_\mathrm{exp}$',      r'$\mathrm{erg}$',                False ), \
+    'shock_radius'     : ( r'$r_\mathrm{sh}$',       r'$\mathrm{cm}$',                 True  ), \
     'min_shock_radius' : ( r'$r_\mathrm{sh}$',       r'$\mathrm{cm}$',                 True  ), \
     'mean_shock_radius': ( r'$r_\mathrm{sh}$',       r'$\mathrm{cm}$',                 True  ), \
     'max_shock_radius' : ( r'$r_\mathrm{sh}$',       r'$\mathrm{cm}$',                 True  ), \
