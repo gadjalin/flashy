@@ -2,8 +2,8 @@ import numpy as np
 import re
 
 # Dictionary mapping element symbols and names to atomic numbers
-_ELEMENTS = {
-    "H": 1, "He": 2, "Li": 3, "Be": 4, "B": 5, "C": 6, "N": 7, "O": 8, "F": 9, "Ne": 10,
+_SYMBOL_TO_Z = {
+    "N0":0, "H": 1, "He": 2, "Li": 3, "Be": 4, "B": 5, "C": 6, "N": 7, "O": 8, "F": 9, "Ne": 10,
     "Na": 11, "Mg": 12, "Al": 13, "Si": 14, "P": 15, "S": 16, "Cl": 17, "Ar": 18, "K": 19, "Ca": 20,
     "Sc": 21, "Ti": 22, "V": 23, "Cr": 24, "Mn": 25, "Fe": 26, "Co": 27, "Ni": 28, "Cu": 29, "Zn": 30,
     "Ga": 31, "Ge": 32, "As": 33, "Se": 34, "Br": 35, "Kr": 36, "Rb": 37, "Sr": 38, "Y": 39, "Zr": 40,
@@ -14,8 +14,11 @@ _ELEMENTS = {
     "Tl": 81, "Pb": 82, "Bi": 83, "Po": 84, "At": 85, "Rn": 86, "Fr": 87, "Ra": 88, "Ac": 89, "Th": 90,
     "Pa": 91, "U": 92, "Np": 93, "Pu": 94, "Am": 95, "Cm": 96, "Bk": 97, "Cf": 98, "Es": 99, "Fm": 100,
     "Md": 101, "No": 102, "Lr": 103, "Rf": 104, "Db": 105, "Sg": 106, "Bh": 107, "Hs": 108, "Mt": 109,
-    "Ds": 110, "Rg": 111, "Cn": 112, "Nh": 113, "Fl": 114, "Mc": 115, "Lv": 116, "Ts": 117, "Og": 118,
-    "Hydrogen": 1, "Helium": 2, "Lithium": 3, "Beryllium": 4, "Boron": 5, "Carbon": 6, "Nitrogen": 7,
+    "Ds": 110, "Rg": 111, "Cn": 112, "Nh": 113, "Fl": 114, "Mc": 115, "Lv": 116, "Ts": 117, "Og": 118
+}
+
+_NAME_TO_Z = {
+    "Neutron":0, "Hydrogen": 1, "Helium": 2, "Lithium": 3, "Beryllium": 4, "Boron": 5, "Carbon": 6, "Nitrogen": 7,
     "Oxygen": 8, "Fluorine": 9, "Neon": 10, "Sodium": 11, "Magnesium": 12, "Aluminium": 13, "Silicon": 14,
     "Phosphorus": 15, "Sulfur": 16, "Chlorine": 17, "Argon": 18, "Potassium": 19, "Calcium": 20,
     "Scandium": 21, "Titanium": 22, "Vanadium": 23, "Chromium": 24, "Manganese": 25, "Iron": 26,
@@ -36,73 +39,74 @@ _ELEMENTS = {
     "Moscovium": 115, "Livermorium": 116, "Tennessine": 117, "Oganesson": 118
 }
 
-def get_charge(element: str) -> int:
+_Z_TO_SYMBOL = {v: k for k,v in _SYMBOL_TO_Z.items()}
+_Z_TO_NAME = {v: k for k,v in _NAME_TO_Z.items()}
+
+class Nucleus(object):
+    __symbol: str
+    __name: str
+    __a: int
+    __z: int
+
+    def __init__(self, a, z):
+        assert (z >= 0 and z <= 118), "Z does not correspond to any known element"
+        self.__symbol = _Z_TO_SYMBOL[z]
+        self.__name = _Z_TO_NAME[z]
+        self.__a = a
+        self.__z = z
+
+    def symbol(self):
+        return self.__symbol
+
+    def name(self):
+        return self.__name
+
+    def A(self):
+        return self.__a
+
+    def Z(self):
+        return self.__z
+
+
+def find_isotope(iid: str):
     """
-    Returns the atomic number of an element given its symbol or full name (case-insensitive).
+    Return a nucleus object corresponding to the given isotope id.
 
     Arguments
     ---
-    element : str
-        The symbol or full name of the element (case-insensitive).
-
-    Returns
-    ---
-    Z : int
-        The atomic number of the element.
-
-    Raises
-    ---
-    ValueError
-        If the element symbol or name is not found.
-    """
-
-    # Standardise input to title case
-    element = element.strip().title()
-
-    if element in _ELEMENTS:
-        return _ELEMENTS[element]
-    else:
-        raise ValueError(f'Unrecognised element: {element}')
-
-def parse_isotope_id(isotope: str) -> tuple[int, int]:
-    """
-    Return the atomic number and weight of the specified isotope.
-
-    Arguments
-    ---
-    isotope : str
-        The isotope symbol in the form e.g. Ni56.
+    iid : str
+        The isotope id in the form e.g. Ni56.
         The string must start with the symbol or name of the element, and the full or shorten atomic weight of the isotope.
         For example, Pb07 must be parsed as Lead 207 (82, 207).
 
     Returns
     ---
-    Z, A : tuple[int, int]
-        A tuple with the atomic number first, and weight second.
+    Nucleus
+        A nucleus object
 
     Raises
     ---
     ValueError
-        If the isotope string cannot be parsed;
+        If the isotope id cannot be parsed;
     """
 
     # Special cases
-    if isotope.lower() in ['n', 'neut', 'neutron']:
-        return 0, 1
-    if isotope.lower() in ['p', 'h']:
-        return 1, 1
-    if isotope.lower() in ['d', 'deut']:
-        return 1, 2
-    if isotope.lower() in ['t']:
-        return 1, 3
+    if iid.lower() in ['n', 'neut', 'neutron']:
+        return Nucleus(1, 0)
+    if iid.lower() in ['p', 'h']:
+        return Nucleus(1, 1)
+    if iid.lower() in ['d', 'deut']:
+        return Nucleus(2, 1)
+    if iid.lower() in ['t']:
+        return Nucleus(3, 1)
 
-    match = re.match(r'^([^\d]*)(.*)$', isotope)
+    match = re.match(r'^([^\d]*)(.*)$', iid)
     if match is None:
-        raise ValueError(f'Unrecognised isotope: {isotope}')
-    
-    name = match[1]
+        raise ValueError(f'Unrecognised isotope id: {iid}')
+
+    symbol = match[1]
     weight = match[2]
-    Z = get_charge(name)
+    Z = _SYMBOL_TO_Z[symbol.strip().title()]
 
     A_parsed = int(weight)
     if (A_parsed < 100):
@@ -125,8 +129,11 @@ def parse_isotope_id(isotope: str) -> tuple[int, int]:
     else:
         A = A_parsed
 
-    return Z, A
+    return Nucleus(A, Z)
 
-def sort_isotope(isotope):
-    Z, A = parse_isotope_id(isotope)
-    return (Z, A)
+def sort_isotope_id(iid):
+    n = find_isotope(iid)
+    return (n.Z(), n.A())
+
+def sort_nucleus(n):
+    return (n.Z(), n.A())

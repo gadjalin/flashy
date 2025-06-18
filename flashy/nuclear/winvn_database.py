@@ -3,7 +3,7 @@ try:
     from importlib import resources
 except ModuleNotFoundError:
     import importlib_resources as resources
-from .isotopes import sort_isotope
+from .nucleus import sort_isotope_id
 
 
 # TODO Move constants someplace generic
@@ -81,7 +81,7 @@ class WinvnDatabase(object):
 
     def __init__(self):
         self._read_winvn()
-        self._names.sort(key=sort_isotope)
+        self._names.sort(key=sort_isotope_id)
 
     def _read_winvn(self):
         self._initialised = False

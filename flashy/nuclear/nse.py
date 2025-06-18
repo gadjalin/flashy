@@ -1,6 +1,6 @@
 import numpy as np
 from .winvn_database import WinvnDatabase, _WINVN_TEMP_GRID
-from .isotopes import sort_isotope
+from .nucleus import sort_isotope_id
 
 
 _winvn_database = None
@@ -240,7 +240,7 @@ class NSE(object):
         if 'p' in labels:
             labels.remove('p')
 
-        labels.sort(key=sort_isotope)
+        labels.sort(key=sort_isotope_id)
 
         for label in labels:
             if not _winvn_database.contains(label):
