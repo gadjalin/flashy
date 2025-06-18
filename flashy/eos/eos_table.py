@@ -12,15 +12,13 @@ _MEVTOERG = 1.60217733e-6
 
 class EosTable(h5py.File):
     # Zero-point shift
-    _zeroPoint: float
+    _energyShift: float
 
     # Table fields list and indexing
     _vars: list
     _tableData: np.ndarray
-    _varToIndex: dict
-    _cs2Index: int
 
-    # Table grid
+    # Grid info
     _logRho: np.ndarray
     _logTemp: np.ndarray
     _Ye: np.ndarray
@@ -45,19 +43,19 @@ class EosTable(h5py.File):
     _minYe: float
     _maxYe: float
 
-    def __init__(self, filename):
+    def __init__(self, filename, interp_method='linear'):
         super(EosTable, self).__init__(filename, 'r')
         self._init_table()
 
     @classmethod
-    def from_file(cls, filename):
+    def from_file(cls, filename, interp_method='linear'):
         """
         Initialise EoS table from hdf5 file
         """
         obj = cls(filename)
         return obj
 
-    def _init_table(self):
+    def _init_table(self, interp_method='linear'):
         # Get the table grid
         self._logRho = self['/logrho'][()]
         self._logTemp = self['/logtemp'][()]
@@ -72,48 +70,36 @@ class EosTable(h5py.File):
         self._minYe = np.min(self._Ye)
         self._maxYe = np.max(self._Ye)
 
-        # Get EoS energy shift
-        self._zeroPoint = self['/energy_shift'][()][0]
-
-        # Get the actual quantities available in the table
+        # Get the actual tabulated quantities available in the table
         self._vars = [k for k in list(self.keys()) if self[k].shape == self._dataShape]
         self._vars.sort()
 
-        # Create EOS_VAR index map
-        indices = (EOS_VAR.PRES, EOS_VAR.EINT, EOS_VAR.GAMC, EOS_VAR.ABAR, EOS_VAR.ZBAR, EOS_VAR.ENTR)
-        fields = ('logpress', 'logenergy', 'gamma', 'Abar', 'Zbar', 'entropy')
-        self._varToIndex = {}
-        for index,var in zip(indices, fields):
-            self._varToIndex[index] = self._vars.index(var)
+        # Get EoS energy shift
+        self._energyShift = self['/energy_shift'][()][0]
 
-        # Sound speed index
-        self._cs2Index = self._vars.index('cs2')
-        
         # load EoS data
         varData = np.array([self['/' + var][()] for var in self._vars])
-        # change the shape for the interpolator
-        self._tableData = np.rollaxis(varData, 0, varData.ndim)
+        self._tableData = np.moveaxis(varData, 0, -1)
 
         # initalize interpolator
-        #TDOO: Add the kwargs as input for the interpolator
-        self._tableInterpolator = RegularGridInterpolator((self._Ye, self._logTemp, self._logRho), self._tableData)
+        self._tableInterpolator = RegularGridInterpolator((self._Ye, self._logTemp, self._logRho), self._tableData, \
+                                                          method=interp_method, bounds_error=False, fill_value=None)
 
     def energy_shift(self) -> float:
-        return self._zeroPoint
+        return self._energyShift
 
-    def fields(self):
+    def field_list(self) -> list:
         return self._vars
 
     def __call__(self, mode: EOS_MODE, eosData: list | np.ndarray):
         return self.eos_nuclear(mode, eosData)
 
-    def eos_nuclear(self, mode: EOS_MODE, eosData: list | np.ndarray):
+    def call(self, mode: EOS_MODE, eosData: list | np.ndarray):
         """
-        Call the EoS table
-        It linearly interpolates the tabulated EoS table.
+        Call the EoS for every zone in eosData
+        It interpolates the tabulated EoS table according to the
+        interpolation method requested at initialisation (default is linear).
 
-        TODO Implement different eos modes
-        
         Parameters
         ----------
         mode : EOS_MODE
@@ -128,14 +114,15 @@ class EosTable(h5py.File):
             e.g. the densities for each cell is stored in the slice
             (EOS_VAR.DENS*vecLen : (EOS_VAR.DENS + 1)*vecLen).
         """
-        assert (eosData is not None) and (len(eosData) % EOS_VAR.NUM == 0), "eosData must be an array of size N*EOS_VAR.NUM"
+        if (eosData is None) or (len(eosData) % EOS_VAR.NUM != 0): 
+            raise RuntimeError("eosData must be an array of size N*EOS_VAR.NUM")
 
         vecLen = int(len(eosData) / EOS_VAR.NUM)
         # Make sure this is a numpy array, for convenience
         # and copy to preserve input data on the callers side
         eosData = np.asarray(eosData, dtype=np.float64).copy()
 
-        # Convenience constants to index eosData
+        # Convenience constants for indexing eosData
         presStart = EOS_VAR.PRES*vecLen
         densStart = EOS_VAR.DENS*vecLen
         tempStart = EOS_VAR.TEMP*vecLen
@@ -148,18 +135,27 @@ class EosTable(h5py.File):
         self.xDens = eosData[densStart:densStart+vecLen]
         self.xTemp = eosData[tempStart:tempStart+vecLen]
         self.xYe   = eosData[zbarStart:zbarStart+vecLen] / eosData[abarStart:abarStart+vecLen]
-        #self.xAbar = eosData[abarStart:abarStart+vecLen]
-        #self.xZbar = eosData[zbarStart:zbarStart+vecLen]
-        #self.xEner = eosData[eintStart:eintStart+vecLen]
-        #self.xEntr = eosData[entrStart:entrStart+vecLen]
-        #self.xPres = eosData[presStart:presStart+vecLen]
+        self.xEner = eosData[eintStart:eintStart+vecLen]
+        self.xPres = eosData[presStart:presStart+vecLen]
 
         self._check_bounds()
 
-        self.eos_internal(0, vecLen)
+        # Call eos table for each zone
+        zones = self.nuc_eos_zone(mode, self.xDens, self.xTemp, self.xYe, self.xEner, self.xPres)
 
+        # Set appropriate variables
+        self.xTemp = 10**zones['logtemp']/_KTOMEV
+        self.xPres = 10**zones['logpress']
+        self.xEner = 10**zones['logenergy'] - self._energyShift
+        self.xEntr = zones['entropy']
+        self.xCs2  = zones['cs2']
+        self.xAbar = zones['Abar']
+        self.xZbar = zones['Zbar']
+
+        eosData[densStart:densStart+vecLen] = self.xDens
+        eosData[tempStart:tempStart+vecLen] = self.xTemp
         eosData[presStart:presStart+vecLen] = self.xPres
-        eosData[eintStart:eintStart+vecLen] = self.xEner + self._zeroPoint
+        eosData[eintStart:eintStart+vecLen] = self.xEner + self._energyShift
         eosData[entrStart:entrStart+vecLen] = self.xEntr
         eosData[gamcStart:gamcStart+vecLen] = self.xCs2 * self.xDens/self.xPres
         eosData[abarStart:abarStart+vecLen] = self.xAbar
@@ -167,39 +163,47 @@ class EosTable(h5py.File):
 
         return eosData
 
-    def eos_internal(self, first:int, vecLen: int):
-        # Interpolate quantities from table
-        result = self.eos_table(self.xDens[first:first+vecLen], self.xTemp[first:first+vecLen], self.xYe[first:first+vecLen])
+    def nuc_eos_zone(self, mode: EOS_MODE, xrho, xtemp, xye, xenr = None, xprs = None):
+        if mode == EOS_MODE.DENS_EI:
+            raise RuntimeError('Unsupported EOS mode')
+        elif mode == EOS_MODE.DENS_PRES:
+            raise RuntimeError('Unsupported EOS mode')
+        elif mode != EOS_MODE.DENS_TEMP:
+            raise RuntimeError('Unknown EOS mode')
 
-        # Set appropriate variables
-        self.xPres = result[:,self._varToIndex[EOS_VAR.PRES]]
-        self.xEner = result[:,self._varToIndex[EOS_VAR.EINT]]
-        self.xEntr = result[:,self._varToIndex[EOS_VAR.ENTR]]
-        self.xCs2  = result[:,self._cs2Index]
-        self.xAbar = result[:,self._varToIndex[EOS_VAR.ABAR]]
-        self.xZbar = result[:,self._varToIndex[EOS_VAR.ZBAR]]
+        # Have rho, temp, ye
+        logrho = np.log10(xrho)
+        logtemp = np.log10(np.asarray(xtemp) * _KTOMEV)
+        ye = np.asarray(xye)
 
-    # TODO Rework this
-    def eos_table(self, xDens, xTemp, xYe):
-        dens = np.array(xDens)
-        temp = np.array(xTemp)
-        ye = np.array(xYe)
-        
-        temp *= _KTOMEV
+        # table interpolation
+        zone_points = np.asarray([ye, logtemp, logrho]).T
+        data = self._tableInterpolator(zone_points)
 
-        dens = np.log10(dens)
-        temp = np.log10(temp)
+        zones = {}
+        zones['logrho'] = logrho[()]
+        zones['logtemp'] = logtemp[()]
+        zones['ye'] = ye[()]
+        for i in range(len(self._vars)):
+            zones[self._vars[i]] = data[:,i]
 
-        # setup interpolation
-        coords = np.array([ye,temp,dens]).T
+        return zones
 
-        result = self._tableInterpolator(coords)
+    def nuc_eos_grid(self, xrho, xtemp, xye):
+        logrho = np.log10(xrho)
+        logtemp = np.log10(np.asarray(xtemp) * _KTOMEV)
+        ye = np.asarray(xye)
 
-        # Apply energy shift
-        result[:,self._varToIndex[EOS_VAR.EINT]] = 10.**result[:,self._varToIndex[EOS_VAR.EINT]] - self._zeroPoint
-        result[:,self._varToIndex[EOS_VAR.PRES]] = 10.**result[:,self._varToIndex[EOS_VAR.PRES]]
+        YE, LOGTEMP, LOGRHO = np.meshgrid(ye, logtemp, logrho, indexing='ij')
+        grid_points = np.stack([YE.ravel(), LOGTEMP.ravel(), LOGRHO.ravel()], axis=-1)
+        data = self._tableInterpolator(grid_points)
+        data = data.reshape(self._tableData.shape)
 
-        return result
+        grid = {}
+        for i in range(len(self._vars)):
+            grid[self._vars[i]] = data[:,:,:,i]
+
+        return grid
 
     def _check_bounds(self):
         if np.any(self.xDens < self._minRho) or np.any(self.xDens > self._maxRho):
@@ -207,7 +211,5 @@ class EosTable(h5py.File):
         if np.any(self.xTemp < self._minTemp) or np.any(self.xTemp > self._maxTemp):
             raise RuntimeError('Temperature out of bounds')
         if np.any(self.xYe < self._minYe) or np.any(self.xYe > self._maxYe):
-            print(self._minYe, self._maxYe)
-            print(self._minTemp, self._maxTemp)
-            print(self._minRho, self._maxRho)
             raise RuntimeError('Electron fraction out of bounds')
+

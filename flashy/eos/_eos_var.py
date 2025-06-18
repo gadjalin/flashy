@@ -28,7 +28,7 @@ class EOS_VAR(IntEnum):
     PEL = 19
     NE  = 20
     ETA = 21
-    
+
     NUM = 22
 
     # Extra variables for analysis

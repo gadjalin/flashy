@@ -130,7 +130,7 @@ class Helmholtz(object):
 
     def _check_init(self) -> None:
         if not _initialised:
-            raise RuntimeError("Helmholtz EOS not initialised!")
+            raise RuntimeError("Helmholtz EoS not initialised!")
 
     def init(self) -> None:
         global _eos_f, _eos_fd, _eos_ft, _eos_fdd, _eos_ftt, _eos_fdt, _eos_fddt, _eos_fdtt, _eos_fddtt
@@ -173,9 +173,9 @@ class Helmholtz(object):
 
     def __call__(self, mode: EOS_MODE, eosData: list | np.ndarray, extra_vars: bool = False,
                  force_constant_input: bool = False, coulomb_multiplier: float = 1.0):
-        return self.eos_helmholtz(mode, eosData, extra_vars, force_constant_input, coulomb_multiplier)
+        return self.call(mode, eosData, extra_vars, force_constant_input, coulomb_multiplier)
 
-    def eos_helmholtz(self, mode: EOS_MODE, eosData: list | np.ndarray, extra_vars: bool = False,
+    def call(self, mode: EOS_MODE, eosData: list | np.ndarray, extra_vars: bool = False,
                       force_constant_input: bool = False, coulomb_multiplier: float = 1.0):
         """
         Call the Helmholtz EOS
@@ -254,7 +254,7 @@ class Helmholtz(object):
             self.sradRow  = np.zeros(vecLen, dtype=np.float64)
             self.scoulRow = np.zeros(vecLen, dtype=np.float64)
 
-        if mode is EOS_MODE.DENS_TEMP:
+        if mode == EOS_MODE.DENS_TEMP:
             # Call helmholtz
             self.eos_helm(0, vecLen, extra_vars, coulomb_multiplier)
 
@@ -263,7 +263,7 @@ class Helmholtz(object):
             eosData[eintStart:eintStart+vecLen] = self.etotRow
             eosData[gamcStart:gamcStart+vecLen] = self.gamcRow
             eosData[entrStart:entrStart+vecLen] = self.stotRow
-        elif mode is EOS_MODE.DENS_EI:
+        elif mode == EOS_MODE.DENS_EI:
             # Desired EI
             ewant = eosData[eintStart:eintStart+vecLen]
             # Initialise errors
@@ -312,7 +312,7 @@ class Helmholtz(object):
                         self.tempRow[k] = _EOS_SMALLT
                         error[k] = 0.1 * _EOS_TOL
                 else:  # If the Newton loop fails to converge
-                    print("Newton-Raphson failed in subroutine eos_helmholtz")
+                    print("Newton-Raphson failed in Helmholtz EoS")
                     print("(e and rho as input):")
                     print(f"Too many iterations: {_EOS_MAXNEWTON}")
                     print(f"k    = {k}, ({vecLen})")
@@ -320,7 +320,7 @@ class Helmholtz(object):
                     print(f"Dens = {self.densRow[k]}")
                     print(f"Pres = {self.ptotRow[k]}")
 
-                    raise RuntimeError("too many iterations in Helmholtz Eos")
+                    raise RuntimeError("too many iterations in Helmholtz EoS")
 
             # Crank through the entire eos one last time
             self.eos_helm(0, vecLen, extra_vars, coulomb_multiplier)
@@ -334,7 +334,7 @@ class Helmholtz(object):
                 eosData[eintStart:eintStart+vecLen] = ewant
             else:
                 eosData[eintStart:eintStart+vecLen] = self.etotRow
-        elif mode is EOS_MODE.DENS_PRES:
+        elif mode == EOS_MODE.DENS_PRES:
             # Desired PRES
             pwant = eosData[presStart:presStart+vecLen]
             # Initialise errors
@@ -384,7 +384,7 @@ class Helmholtz(object):
                         self.tempRow[k] = _EOS_SMALLT
                         error[k] = 0.1 * _EOS_TOL
                 else:  # If the Newton loop fails to converge
-                    print("Newton-Raphson failed in subroutine eos_helmholtz")
+                    print("Newton-Raphson failed in Helmholtz EoS")
                     print("(e and rho as input):")
                     print(f"Too many iterations: {_EOS_MAXNEWTON}")
                     print(f"k    = {k}, ({vecLen})")
@@ -392,7 +392,7 @@ class Helmholtz(object):
                     print(f"Dens = {self.densRow[k]}")
                     print(f"Pres = {self.ptotRow[k]}")
 
-                    raise RuntimeError("too many iterations in Helmholtz Eos")
+                    raise RuntimeError("too many iterations in Helmholtz EoS")
 
             # Crank through the entire eos one last time
             self.eos_helm(0, vecLen, extra_vars, coulomb_multiplier)
@@ -907,3 +907,4 @@ class Helmholtz(object):
                 self.seleRow[i]  = sele
                 self.sradRow[i]  = srad
                 self.scoulRow[i] = scoul
+
