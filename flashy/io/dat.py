@@ -148,7 +148,7 @@ class DatFile(object):
         elif runs is None:
             runlist = self.__runs[:]
         else:
-            raise RuntimeError(f'Invalid index type: {type(runs)}')
+            raise IndexError(f'Invalid index type: {type(runs)}')
 
         if no_overlap:
             cutoffs = np.array([run['time'][0] for run in runlist])[1:]

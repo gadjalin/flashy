@@ -160,6 +160,15 @@ def get_bounce_time(logfile: str) -> float:
                 return float(line.split()[1])
     return None
 
+def get_midcell_dr(r):
+    # Assume cell-centred coordinates in model
+    faces = np.zeros(len(r) + 1)
+    faces[1:-1] = 0.5 * (r[1:] + r[:-1])
+    faces[0] = r[0] - 0.5 * (r[1] - r[0])
+    faces[-1] = r[-1] + 0.5 * (r[-1] - r[-2])
+    dr = faces[1:] - faces[:-1]
+    return dr
+
 def calculate_shell_mass(r, dr, dens):
     """
     Calculates the mass of the shells.
