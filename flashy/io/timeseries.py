@@ -134,13 +134,16 @@ class TimeSeries1D(ABC):
                 return self._data[key].to_numpy()
             elif key in ['t'] and isinstance(self, AMRTimeSeries1D):
                 return self.times()
-            elif key in ['r', 'dr'] and isinstance(self, AMRTimeSeries1D) and len(self) == 1:
-                return self._data[0][key].to_numpy()
+            elif key in ['r', 'dr'] and isinstance(self, AMRTimeSeries1D):
+                if len(self) == 1:
+                    return self._data[0][key].to_numpy()
+                else:
+                    return TimeSeriesView1D(self, key)
             else:
                 raise IndexError(f'Invalid key {key}')
         # Resolve multiple fields
         elif isinstance(key, (list, tuple, np.ndarray)) and all(isinstance(k, str) for k in key):
-            if all(k in self._field_list for k in key):
+            if all(k in ['r', 'dr'] + self._field_list for k in key):
                 return TimeSeriesView1D(self, key)
             else:
                 raise IndexError(f'Invalid keys: {[k for k in key if k not in self._field_list]}')
@@ -216,7 +219,7 @@ class AMRTimeSeries1D(TimeSeries1D):
                 ind = list(range(begin, end))
             else:
                 ind = [int(np.argmin(np.abs(times - time))) for time in np.arange(start, stop, step)]
-        if isinstance(t, float):
+        elif isinstance(t, float):
             ind = [int(np.argmin(np.abs(times - t)))]
         else:
             ind = [int(np.argmin(np.abs(times - time))) for time in list(t)]
@@ -655,9 +658,9 @@ class TimeSeriesView1D(object):
 
     def __init__(self, series: TimeSeries1D, field_list: str | list[str] = None):
         if field_list is None:
-            field_list = series.field_list()
+            field_list = ['r', 'dr'] + series.field_list()
         else:
-            field_list = [field_list] if isinstance(field_list, str) else list(field_list)
+            field_list = [field_list] if isinstance(field_list, str) else list(set(field_list))
             if any(field not in ['r', 'dr'] + series.field_list() for field in field_list):
                 missing_fields = [field for field in field_list if field not in series.field_list()]
                 raise RuntimeError(f'Field not in series: {missing_fields}')
@@ -666,7 +669,7 @@ class TimeSeriesView1D(object):
         self._field_list = field_list
 
     def __contains__(self, key: str) -> bool:
-        return (key in self._field_list) or (key in ['t', 'r', 'dr'])
+        return (key in self._field_list) or (key in ['t'])
 
     def __getitem__(self, key):
         if isinstance(key, str):
@@ -680,13 +683,6 @@ class TimeSeriesView1D(object):
                     return TimeSeriesView1D(self._series, key)
             elif key == 't':
                 return self._series.times()
-            elif isinstance(self._series, UniformTimeSeries1D) and key in ['r', 'dr']:
-                return self._series[key]
-            elif isinstance(self._series, AMRTimeSeries1D) and key in ['r', 'dr']:
-                if len(self._series) == 1:
-                    return self._series._data[0][key].to_numpy()
-                else:
-                    raise RuntimeError(f'Cannot retrieve key "{key}" from AMR time series')
             else:
                 raise IndexError(f'Key not in dataset: {key}')
         elif isinstance(key, (list, tuple, np.ndarray)):
@@ -707,36 +703,31 @@ class TimeSeriesView1D(object):
             if len(self._field_list) == 1:
                 return self._series._data[ind][self._field_list[0]].to_numpy()
             else:
-                return {field: self._series._data[ind][field].to_numpy() for field in list(set(['r', 'dr'] + self._field_list))}
+                return {field: self._series._data[ind][field].to_numpy() for field in self._field_list}
         elif isinstance(self._series, UniformTimeSeries1D):
             if len(self._field_list) == 1:
                 return self._series._data[self._field_list[0]].sel(t=t, method='nearest').to_numpy()
             else:
-                return {field: self._series._data[field].sel(t=t, method='nearest').to_numpy() for field in list(set(['r', 'dr'] + self._field_list))}
+                return {field: self._series._data[field].sel(t=t, method='nearest').to_numpy() for field in self._field_list}
 
     def as_array(self) -> np.ndarray | dict[str, np.ndarray]:
         if isinstance(self._series, AMRTimeSeries1D):
-            if len(self._field_list) == 1:
-                return self._field_as_array(self._field_list[0])
-            else:
-                return {field: self._field_as_array(field) for field in self._field_list}
+            raise RuntimeError('Cannot construct array from AMR time series')
         elif isinstance(self._series, UniformTimeSeries1D):
             if len(self._field_list) == 1:
                 return self._field_as_array(self._field_list[0])
             else:
-                return {field: self._field_as_array(field) for field in self._field_list}
+                return {field: self._field_as_array(field) for field in self._field_list if field not in ['r', 'dr']}
 
     def _field_as_array(self, field: str):
         if isinstance(self._series, AMRTimeSeries1D):
-            if len(self._series) > 1:
-                raise RuntimeError('Cannot construct array from AMR time series')
-            else:
-                return self._series._data[0][field].to_numpy()
+            raise RuntimeError('Cannot construct array from AMR time series')
         elif isinstance(self._series, UniformTimeSeries1D):
             if len(self._series) > 1:
                 return np.swapaxes(self._series._data[field].to_numpy(), 0, 1)
             else:
                 return self._series._data[field].to_numpy()
+
 
 class TimeSeriesIterator1D(object):
     _series: TimeSeries1D
@@ -746,7 +737,7 @@ class TimeSeriesIterator1D(object):
 
     def __init__(self, series: TimeSeries1D, field_list: list[str] = None, reverse: bool = False):
         self._series = series
-        self._field_list = field_list or series.field_list()
+        self._field_list = field_list or ['r', 'dr'] + series.field_list()
         self._reverse = reverse
         self._ind = len(series) - 1 if reverse else 0
 
@@ -760,11 +751,17 @@ class TimeSeriesIterator1D(object):
         time = self._series._times[self._ind]
 
         if isinstance(self._series, AMRTimeSeries1D):
-            data = {field: self._series._data[self._ind][field].to_numpy()
-                    for field in ['r', 'dr'] + self._field_list}
+            if len(self._field_list) > 1:
+                data = {field: self._series._data[self._ind][field].to_numpy()
+                        for field in self._field_list}
+            else:
+                data = self._series._data[self._ind][self._field_list[0]].to_numpy()
         elif isinstance(self._series, UniformTimeSeries1D):
-            data = {field: self._series._data[field].isel(t=self._ind).to_numpy()
-                    for field in ['r', 'dr'] + self._field_list}
+            if len(self._field_list) > 1:
+                data = {field: self._series._data[field].isel(t=self._ind).to_numpy()
+                        for field in self._field_list}
+            else:
+                data = self._series._data[self._field_list[0]].isel(t=self._ind).to_numpy()
 
         self._ind = self._ind - 1 if self._reverse else self._ind + 1
         return time, data
