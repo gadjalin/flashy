@@ -10,8 +10,8 @@ class Progenitor(object):
     This class can read progenitor profiles
     from a FLASH progenitor file, take data from memory,
     or parse progenitor files from other codes (mesa, kepler, ...).
-    The profiles of each variable can then be used,
-    and the progenitor can be saved to a FLASH file.
+    Radial profiles for each variable are made available
+    and can be saved to a FLASH file.
     """
 
     # Private fields
