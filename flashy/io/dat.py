@@ -1,251 +1,358 @@
+# For type hints
+from __future__ import annotations
+
 import numpy as np
+import xarray as xr
 import re
 
 
 class DatRun(object):
-    __source_file: str
-    __data: np.ndarray
+    _source_file: str
+    _field_list: list[str]
+    _data: xr.DataArray
 
-    def __init__(self, data, source):
-        self.__source_file = source
-        self.__data = np.atleast_1d(data.copy())
+    def __init__(self, data: np.ndarray, source: str):
+        """
+        Create a new DatRun.
 
-    def __getitem__(self, index):
-        return self.get(index)
+        Parameters
+        ----------
+        data : np.ndarray
+            Must be a structured numpy array with the first column
+            being the 'time' column.
+        source : str
+            Path to the dat file where this run comes from.
+        """
+        self._source_file = source
+        if isinstance(data, np.ndarray):
+            self._field_list = list(data.dtype.names)
+            # Omit time column
+            values = np.vstack([[row[field] for field in self._field_list[1:]] for row in data])
+            t = data['time']
+            self._data = xr.DataArray(
+                values,
+                coords={
+                    'time': t,
+                    'field': self._field_list[1:]
+                },
+                dims=['time', 'field']
+            )
+        elif isinstance(data, xr.DataArray):
+            self._field_list = ['time'] + list(data.coords['field'].values)
+            self._data = data
+        else:
+            raise RuntimeError('Invalid input data')
+
+    def __contains__(self, key: str | int) -> bool:
+        return (key in (['time'] + list(self._data.coords['field'].values))) or \
+               (key in np.arange(len(self._data.coords['field'].values) + 1))
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            if key == 0:
+                return self._data.coords['time'].to_numpy()
+            else:
+                return self._data.isel(field=key-1).to_numpy()
+        elif isinstance(key, str):
+            if key == 'time':
+                return self._data.coords['time'].to_numpy()
+            else:
+                return self._data.sel(field=key).to_numpy()
+        else:
+            raise IndexError(f'Invalid index type: {type(key)}')
+
+    def select_times(self, t: float | list[float] | slice) -> DatRun:
+        """
+        Select specific times in the run.
+
+        Parameters
+        ----------
+        t : float, list or slice
+            The times to select. This can be a single time,
+            a list of times, or a whole slice.
+            This only selects the times nearest to the request ones.
+
+        Returns
+        -------
+        dat : DatRun
+            A new DatRun object containing only entries for the selected times.
+            This can be useful for plotting.
+        """
+        if isinstance(t, slice):
+            data = self._data.sel(time=t)
+        elif isinstance(t, float):
+            data = self._data.sel(time=[t], method='nearest')
+        elif isinstance(t, (list, tuple, np.ndarray)) and all(isinstance(v, float) for v in t):
+            data = self._data.sel(time=list(t), method='nearest')
+        else:
+            raise RuntimeError(f'Invalid type: {type(t)}')
+
+        return DatRun(data, self._source_file)
 
     def __str__(self):
-        return f'DatRun @ {self.__source_file}; {len(self.__data.dtype.names)} columns; {len(self.__data)} rows;'
+        source = self._source_file
+        n_columns = len(self._data.coords['field'].values) + 1 # Include 'time' column
+        n_rows = len(self._data.coords['time'].values)
+        return f'DatRun @ {source}; {n_columns} columns; {n_rows} rows'
 
-    def get(self, index):
-        if isinstance(index, (int, slice)):
-            return self.__data[self.__data.dtype.names[index]]
-        elif isinstance(index, str):
-            return self.__data[index]
-        elif isinstance(index, (list, tuple, np.ndarray)):
-            if np.all([isinstance(i, int) for i in index]):
-                return self.__data[[self.__data.dtype.names[i] for i in index]]
-            elif np.all([isinstance(i, str) for i in index]):
-                return self.__data[list(index)]
-            else:
-                raise IndexError(f'Indices must all have same type: {index}')
-        else:
-            raise IndexError(f'Invalid index type: {type(index)}')
-
-    def columns(self):
-        return np.asarray(self.__data.dtype.names)
-    
-    def data(self):
-        return self.__data.copy()
+    @property
+    def field_list(self) -> list[str]:
+        """
+        A list of available fields (columns) in the dat file.
+        """
+        return self._field_list
 
 
 class DatFile(object):
     """
-    Open a FLASH dat file
+    Store a FLASH dat file.
 
     This class reads and stores the simulation output
     from a FLASH dat file.
-    If the file contains multiple runs (usually starting with
-    a new header, containing the columns' names),
+    If the file contains multiple runs,
     the data from each run are split into different lists.
+    Different runs can only be detected if they are
+    preceded by a new header, or if there is a jump in time.
+    Thus, contiguous output resulting from from multiple restarts
+    is considered as one run.
     """
+    _source_file: str
+    _field_list: list[str]
+    _runs: list[DatRun]
+    _loaded: bool
 
-    __source_file: str
-    __columns: np.ndarray
-    __runs: list
-    __loaded: bool
+    def __init__(self):
+        self._source_file = ''
+        self._field_list = None
+        self._runs = None
+        self._loaded = False
 
-    def __init__(self, filename = None):
-        self.__columns = np.empty(0)
-        self.__runs = []
-        self.__loaded = False
-
-        if filename is not None:
-            self.read_file(filename)
+    # TODO This may be redundant
+    @staticmethod
+    def load(file) -> DatFile:
+        return DatFile.load_file(file)
 
     @classmethod
-    def from_file(cls, filename):
+    def load_file(cls, file: str) -> DatFile:
+        """
+        Load a dat file.
+
+        Parameters
+        ----------
+        file : str
+            Path to a dat file.
+
+        Returns
+        -------
+        dat : DatFile
+        """
         obj = cls()
-        obj.read_file(filename)
+        obj.read_file(file)
         return obj
 
     def __checkloaded(self) -> bool:
-        if not self.__loaded:
+        if not self._loaded:
             raise RuntimeError('No dat file has been loaded yet!')
 
-    def __getitem__(self, index):
-        return self.get_run(index)
+    def __contains__(self, key: str | int) -> bool:
+        return key in self._field_list or \
+               key in np.arange(len(self._field_list) + 1)
+
+    def __getitem__(self, key):
+        return self.get(key)
 
     def __str__(self):
-        return f'DatFile @ {self.__source_file}; {len(self.__runs)} runs; {len(self.__columns)} columns;'
+        if self._loaded:
+            source = self._source_file
+            n_run = len(self._runs)
+            n_fields = len(self._field_list)
+            return f'DatFile @ {source}; {n_run} runs; {n_fields} fields;'
+        else:
+            return 'No Dat file loaded'
 
-    def columns(self):
-        """
-        Return the name of the columns.
-        """
-        return self.__columns.copy()
+    def __len__(self) -> int:
+        return len(self._runs)
 
-    def run_count(self):
+    @property
+    def field_list(self) -> list[str]:
+        """
+        A list of available fields (columns) in the dat file.
+        """
+        return self._field_list
+
+    @property
+    def size(self) -> int:
         """
         How many runs this dat file contains.
         """
-        return len(self.__runs)
+        return len(self._runs)
 
-    def all_data(self):
+    def get(self, key) -> DatRun:
         """
-        Return all columns for all, or a specific run(s).
-
-        Returns
-        -------
-        An array containing the data of all runs.
-        Can be indexed using the appropriate column name.
-
-        Raises
-        ------
-        RuntimeError
-            If no file has been loaded in memory yet, either via the
-            constructor or the readfile method.
-        """
-        self.__checkloaded()
-        return DatRun(np.concatenate([datrun.data() for datrun in self.__runs]), self.__source_file)
-
-    def get_run(self, runs, no_overlap: bool = False):
-        """
-        Return the data from specific runs.
+        Get specific runs.
 
         Parameters
         ----------
-        runs : int | list | tuple | slice | np.ndarray
-            Index of the runs.
-
-        no_overlap : bool
-            If True, assumes a succession of restarts and remove overlapping
-            data points. The most recent run overwrites the overlapping data
-            from the previous ones.
-            Be careful, this means that the data will only go as far as
-            the latest run goes. If a more recent run went less far
-            than previous ones, the longer ones will not show up.
+        key : int, array-like or slice
+            Runs to collect.
 
         Returns
         -------
-        The data from the specified runs.
+        dat : DatRun
+            A new DatRun object containing all the data
+            collected from the specified runs.
+            The new object is kept monotonic, any overlapping
+            data points will be discarded in favour of the most recent
+            ones.
 
         Raises
         ------
         RuntimeError
-            If no file has been loaded in memory yet, either via the
-            constructor or the readfile method.
+            If no file has been loaded in memory yet.
         IndexError
-            If the index type is invalid.
+            If the key type is invalid.
         """
         self.__checkloaded()
 
-        if isinstance(runs, int):
-            runlist = [self.__runs[runs]]
-        elif isinstance(runs, (list, tuple, np.ndarray)) and np.all([isinstance(index, int) for index in runs]):
-            runlist = [self.__runs[index] for index in runs]
+        if isinstance(key, int):
+            runs = [self._runs[key]]
+        elif isinstance(key, (list, tuple, np.ndarray)) and all(isinstance(i, int) for i in key):
+            runs = [self._runs[i] for i in key]
         elif isinstance(runs, slice):
-            runlist = self.__runs[runs]
-        elif runs is None:
-            runlist = self.__runs[:]
+            runs = self._runs[key]
+        elif key is None:
+            runs = self._runs[:]
         else:
-            raise IndexError(f'Invalid index type: {type(runs)}')
+            raise IndexError(f'Invalid index type: {type(key)}')
 
-        if no_overlap:
-            cutoffs = np.array([run['time'][0] for run in runlist])[1:]
-            cutoffs.append(runlist[-1]['time'][-1] + 1e-6)
-            return DatRun(np.concatenate([run.data()[run['time'] < cutoff] for run,cutoff in zip(runlist, cutoffs)]), self.__source_file)
-        else:
-            return DatRun(np.concatenate([run.data() for run in runlist], axis=0), self.__source_file)
+        new_xda = None
+        for run in runs:
+            xda = run._data
+            if new_xda is not None:
+                tmin = xda.coords['time'].values[0]
+                new_xda = new_xda.sel(time=new_xda['time'] < tmin)
+                xda = xr.concat([new_xda, xda], dim='time')
+            new_xda = xda
 
-    def read_file(self, filename) -> None:
+        new_run = DatRun(new_xda, self._source_file)
+        return new_run
+
+    def read_file(self, file: str) -> None:
         """
-        Reads the specified dat file and loads the data in memory.
+        Read a dat file.
 
         Parameters
         ----------
-        filename
+        file : str
             The path to the dat file.
         """
         self.clear()
 
-        with open(filename, 'r') as f:
-            l = f.readline().strip()
-
-        no_header = False
-        # First line is header
-        if l.startswith('#'):
-            # Read column headers. Strip the number at the beginning and save the name
-            offset = 26
-            width = 25
-            # First column begins with a #
-            columns = []
-            columns.append(re.sub(r'^\d+\s*', '', l[1:width]).strip())
-    
-            # Read the other columns
-            while (offset + width < len(l)):
-                column = re.sub(r'^\d+\s*', '', l[offset:offset+width].strip()).strip()
-                columns.append(column)
-                offset += width+1
-    
-            # Read last one to avoid indexing line out of bounds
-            column = re.sub(r'^\d+\s*', '', l[offset:].strip()).strip()
-            if len(column) > 0:
-                columns.append(column)
-        else:
-            # File is missing an header. Just parse the number of available columns.
-            n_column = len(l.split())
-            columns = [f'{i+1}' for i in range(n_column)]
-            no_header = True
-
-        with open(filename, 'r') as f:
-            nline = 0
-            run_starts = 1 if no_header else None
+        # Assuming that wherever a header is found, every run in the file has the same columns
+        with open(file, 'r') as f:
             for line in f:
-                nline += 1
-                
-                if (line.strip().startswith('#')):
-                    if run_starts is not None:
-                        # Parse file between two headers (one FLASH run)
-                        if (nline-run_starts-1) > 0:
-                            data = np.genfromtxt(
-                                fname=filename,
-                                dtype=None,
-                                names=columns,
-                                encoding='ascii',
-                                skip_header=run_starts,
-                                max_rows=nline-run_starts-1
-                            )
-                            self.__runs.append(DatRun(data, filename))
-
-                        run_starts = nline
-                    else:
-                        run_starts = nline
-
-            # Parse last run, from header to EOF
-            if run_starts is not None:
-                if nline > run_starts:
-                    data = np.genfromtxt(
-                        fname=filename,
-                        names=columns,
-                        dtype=None,
-                        encoding='ascii',
-                        skip_header=run_starts
-                    )
-                    self.__runs.append(DatRun(data, filename))
-
-            # Update column names to match python compliants one (_ instead of spaces and - etc)
-            self.__columns = self.__runs[0].columns()
-
-            if len(self.__runs) > 0:
-                self.__source_file = filename
-                self.__loaded = True
+                if line.strip().startswith('#'):
+                    field_list = self._parse_header_line(line)
+                    break
             else:
-                # Nothing was found in the dat file
-                # TODO Print some warning
-                self.__loaded = False
+                n = len(line.split())
+                field_list = [f'{i+1}' for i in range(n)]
+
+        # Parse runs in the file
+        self._runs = self._parse_dat_runs(file, field_list)
+
+        if self._runs:
+            self._source_file = file
+            self._field_list = field_list
+            self._loaded = True
+        else:
+            # Nothing was found in the dat file
+            print(f'Empty dat file @ {file}')
+            self._loaded = False
 
     def clear(self) -> None:
-        self.__columns = np.empty(0)
-        self.__runs = []
-        self.__loaded = False
+        self._source_file = ''
+        self._field_list = None
+        self._runs = None
+        self._loaded = False
+
+    def _parse_header_line(self, header: str) -> list[str]:
+        field_list = []
+
+        field_width = 26
+        start = 3
+        end = field_width+1
+
+        # Read column headers. Strip the number at the beginning and save the name
+        while end < len(header):
+            field = header[start:end].strip()
+            field = re.sub(r'^\d+\s*', '', field).strip()
+            field_list.append(field)
+            start = end
+            end = min(start + field_width, len(header))
+
+        return field_list
+
+    def _parse_dat_runs(self, file: str, field_list: list[str]) -> list[DatRun]:
+        raw_data = []
+        runs = []
+        last_time = None
+        line_number = 0
+        with open(file, 'r') as f:
+            for line in f:
+                line_number += 1
+                line = line.strip()
+                # Skip empty lines
+                if not line:
+                    continue
+
+                # Reached a header, start new run
+                if line.startswith('#'):
+                    if raw_data:
+                        runs.append(self._make_run(raw_data, field_list, file))
+                        raw_data = []
+                    last_time = None
+                    continue
+
+                # Parse numeric values from line
+                values = self._parse_dat_line(line)
+                # Sanity check
+                if len(values) != len(field_list):
+                    raise RuntimeError(f'{file}:{line_number}: values do not match column count ({len(values)} vs {len(field_list)})')
+
+                # Discontinuous time means restart from earlier checkpoint.
+                # TODO no-overlap restarts: if no header is printed but time is
+                # discontinuous, stitch runs together anyway using the most recent data
+                current_time = values[0]
+                if last_time is not None and current_time < last_time:
+                    runs.append(self._make_run(raw_data, field_list, file))
+                    raw_data = []
+
+                raw_data.append(values)
+                last_time = current_time
+
+            # Save last run in file
+            if raw_data:
+                runs.append(self._make_run(raw_data, field_list, file))
+
+        return runs
+
+    def _parse_dat_line(self, line: str) -> list[np.float64]:
+        strs = line.split()
+        values = []
+        for s in strs:
+            try:
+                v = np.float64(s)
+            except ValueError:
+                v = 0.0
+            values.append(v)
+
+        return values
+
+    def _make_run(self, raw_data: list, field_list: list[str], source: str) -> DatRun:
+        # Make a structured numpy array and pass to DatRun constructor
+        dtype = [(field, np.float64) for field in field_list]
+        data = np.array([tuple(row) for row in raw_data], dtype=dtype)
+        run = DatRun(data, source)
+        return run
 

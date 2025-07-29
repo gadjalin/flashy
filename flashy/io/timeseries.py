@@ -5,11 +5,12 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import xarray as xr
-# TODO yt is heavy to import
-import yt
-import h5py
 from glob import glob
 from tqdm import tqdm
+from pathlib import Path
+# TODO custom reader cause yt is heavy to import
+import yt
+import h5py
 
 
 _TQDM_FORMAT = '{desc:<5.5}{percentage:3.0f}%|{bar:20}{r_bar}'
@@ -18,6 +19,21 @@ _DEFAULT_REAL_SCALARS = ['bouncetime', 'hyb_trans', 'hyb_translow', 'hyb_offsets
 
 
 class TimeSeries1D(ABC):
+    """
+    Load, store, and save FLASH plot files as a time series.
+
+    This class is the base class of AMRTimeSeries1D and
+    UniformTimeSeries1D.
+    AMRTimeSeries1D is used to directly store the AMR data
+    from FLASH plot files. The data can be interpolated
+    to a uniform grid, giving a UniformTimeSeries1D,
+    which is more convenient for plotting.
+
+    See Also
+    --------
+    AMRTimeSeries1D
+    UniformTimeSeries1D
+    """
     _source_file: str
     _times: list[float]
     _field_list: list[str]
@@ -34,21 +50,111 @@ class TimeSeries1D(ABC):
         self._loaded = False
 
     # Loading and saving
-    # TODO interpolate in situ to return a UniformTimeSeries1D
     @staticmethod
-    def from_dir(path, basename=None, field_list=None) -> AMRTimeSeries1D:
+    def load(path, field_list=None, basename=None) -> AMRTimeSeries1D | UniformTimeSeries1D:
+        """
+        Load a time series.
+
+        Depending on the type of `path`, this can either load
+        all plot files from a directory, a given list of plot files,
+        or an existing time series saved as an hdf5 file.
+
+        Parameters
+        ----------
+        path : str or list
+            Either a path to a directory, a list of paths to plot files,
+            or a path to an existing time series hdf5 save.
+        field_list : list
+            Used to specify which quantities to save from plot files, when
+            reading plot files.
+        basename : str
+            Used to specify the basename of the plot files to read,
+            when reading a directory
+
+        Returns
+        -------
+        series : AMRTimeSeries1D or UniformTimeSeries1D
+
+        See Also
+        --------
+        load_dir
+        load_plots
+        load_series
+        """
+        if isinstance(path, str) and Path(path).is_dir():
+            return TimeSeries1D.load_dir(path, field_list, basename)
+        elif isinstance(path, str) and h5py.is_hdf5(path):
+            return TimeSeries1D.load_series(path)
+        elif isinstance(path, (list, tuple, np.ndarray)) and all(isinstance(file, str) for file in path):
+            return TimeSeries1D.load_plots(path, field_list)
+        else:
+            raise RuntimeError(f'Unrecognised file type: {path}')
+
+    @staticmethod
+    def load_dir(path, field_list=None, basename=None) -> AMRTimeSeries1D:
+        """
+        Load all plot files in a directory.
+
+        Parameters
+        ----------
+        path : str
+            Path to a directory containing FLASH plot files.
+        field_list : None, 'all', or list, optional
+            A list of quantities to read and save
+            from the plot files into the time series.
+            If None (default), reads most common quantities.
+            If 'all', read all available data.
+        basename : None or str, optional
+            The plot files' basename for disambiguation if multiple
+            simulations reside in the same directory.
+
+        Returns
+        -------
+        series : AMRTimeSeries1D
+        """
         obj = AMRTimeSeries1D()
-        obj.read_dir(path, basename, field_list)
+        obj.read_dir(path, field_list, basename)
         return obj
 
     @staticmethod
-    def from_files(files, field_list=None) -> AMRTimeSeries1D:
+    def load_plots(files, field_list=None) -> AMRTimeSeries1D:
+        """
+        Load a list of plot files.
+
+        Parameters
+        ----------
+        files : list
+            A list of paths to plot files.
+        field_list : None, 'all', or list, optional
+            A list of quantities to read and save
+            from the plot files into the time series.
+            If None (default), reads most common quantities.
+            If 'all', read all available data.
+
+        Returns
+        -------
+        series : AMRTimeSeries1D
+        """
         obj = AMRTimeSeries1D()
         obj.read_files(files, field_list)
         return obj
 
     @staticmethod
-    def from_hdf5(file) -> AMRTimeSeries1D | UniformTimeSeries1D:
+    def load_series(file) -> AMRTimeSeries1D | UniformTimeSeries1D:
+        """
+        Load an existing time series save file.
+
+        Parameters
+        ----------
+        file : str
+            Path to an existing AMR or Uniform time
+            series save file. Time series are saved in
+            HDF5 format.
+
+        Returns
+        -------
+        series : AMRTimeSeries1D or UniformTimeSeries1D
+        """
         obj = None
         with h5py.File(file, 'r') as f:
             file_type = f.attrs.get('type', '').strip()
@@ -67,19 +173,76 @@ class TimeSeries1D(ABC):
             raise RuntimeError('No simulation has been loaded yet!')
 
     # Accessors
+    @property
     def times(self) -> list[float]:
+        """
+        Return a sorted list of times in the series.
+
+        Returns
+        -------
+        times : list
+            The list of times stored in the series
+        """
         return self._times
 
+    @property
     def field_list(self) -> list[str]:
+        """
+        Return a list of available quantities stored in the series.
+
+        The 'r' (radius) and 'dr' (cell size) quantities are implicitly available.
+        For UniformTimeSeries1D, the 't' (time) is also available.
+
+        Returns
+        -------
+        field_list : list
+            The list of quantities stored in the series.
+        """
         return self._field_list
 
+    @property
     def real_scalars(self) -> dict[str, float]:
+        """
+        A dictionary of scalar quantities from the simulation.
+
+        This holds useful scalar quantities from the simulation
+        such as 'hyb_trans' and 'hyb_translow', the upper and lower
+        boundaries of the transition region of the hybrid EoS.
+        Other quantities include 'bouncetime', which is determined
+        using the last available time in the series when reading
+        plot files, and 'hyb_offsetshift', the progenitor dependent
+        constant shift of the hybrid EoS.
+
+        Returns
+        -------
+        real_scalars : dict
+        """
         return self._real_scalars
 
+    @property
     def string_scalars(self) -> dict[str, float]:
+        """
+        A dictionary of scalar string quantities.
+
+        This dictionary is used to store the
+        hybrid EoS transition type. The value 'hyb_transtype' is
+        either 'dens' or 'temp' for a density or temperature
+        based transition.
+
+        Returns
+        -------
+        str_scalars : dict
+        """
         return self._str_scalars
 
+    @property
     def size(self) -> int:
+        """
+        The size of the time series.
+
+        Effectively the number of times stored.
+        Equivalent to 'len(series.times())'.
+        """
         return len(self._times)
 
     def __len__(self) -> int:
@@ -109,15 +272,57 @@ class TimeSeries1D(ABC):
         pass
 
     @abstractmethod
-    def interp(self, r: np.ndarray, fields=None) -> UniformTimeSeries1D:
+    def interp(self, r: np.ndarray, field_list=None) -> UniformTimeSeries1D:
+        """
+        Interpolates the data on a new, uniform grid.
+
+        Parameters
+        ----------
+        r : array-like
+            The new grid on which to interpolate the data.
+            It must be uniform (linear or logarithmic),
+            typically using `numpy.linspace` and `numpy.logspace`.
+        field_list : None, 'all' or list, optional
+            A list of quantities to keep in the new interpolated
+            series. If None (default) or 'all', interpolate all the
+            quantities in the current series.
+
+        Returns
+        -------
+        series : UniformTimeSeries1D
+            An new time series interpolated on the new
+            grid given by the `r` parameter.
+        """
         pass
 
     @abstractmethod
     def save_hdf5(self, file: str) -> None:
+        """
+        Save the time series as a HDF5 file.
+
+        Parameters
+        ----------
+        file : str
+            Path to the file where to save
+            the time series.
+        """
         pass
 
     @abstractmethod
     def read_hdf5(self, file: str) -> None:
+        """
+        Restore a time series saved as a HDF5 file.
+
+        Parameters
+        ----------
+        file : str
+            Path to the HDF5 file where the series
+            is saved.
+        """
+        pass
+
+    @abstractmethod
+    def clear(self) -> None:
         pass
 
     # Utility methods
@@ -161,7 +366,7 @@ class TimeSeries1D(ABC):
     def _sanitise_field_list(field_list):
         """
         Check that all fields appear only once, and ensure
-        'r' and 'dr' are at the beginning of the list
+        'r' and 'dr' are not in the list, as they are implied.
         """
         if field_list is None:
             field_list = _DEFAULT_FIELDS
@@ -189,6 +394,20 @@ class TimeSeries1D(ABC):
 
 
 class AMRTimeSeries1D(TimeSeries1D):
+    """
+    Store a time series based on AMR data.
+
+    When reading plot files from a FLASH simulation,
+    an AMRTimeSeries1D is built using the AMR data.
+    Use `interp` to construct a UniformTimeSeries1D
+    using a uniform grid for plotting.
+
+    See Also
+    --------
+    TimeSeries1D.load_dir
+    TimeSeries1D.load_plots
+    interp
+    """
     _data: list[xr.Dataset]
 
     def __init__(self):
@@ -197,6 +416,31 @@ class AMRTimeSeries1D(TimeSeries1D):
 
     @classmethod
     def select_times(cls, series: AMRTimeSeries1D, t: float | list[float] | slice, field_list: list[str] = None) -> AMRTimeSeries1D:
+        """
+        Select specific times in the series.
+
+        Parameters
+        ----------
+        series : AMRTimeSeries1D
+            The series from which to select times.
+        t : float, list or slice
+            A specific time, a list of times, or a slice.
+            The times closest to the requested ones are
+            selected and used to build a new time series.
+            It also ensures that there are no duplicates,
+            therefore, it is not guaranteed that the resulting
+            series has the same length as `t`, if `t` is a list
+            of times.
+        field_list : None, 'all' or list, optional
+            A list of quantities to keep in the new series.
+            If None (default) or 'all', keep everything.
+
+        Returns
+        -------
+        series : AMRTimeSeries1D
+            A new time series built from the `series` parameter
+            using the times given by the `t` parameter.
+        """
         obj = cls()
 
         # Sanitise field list
@@ -248,7 +492,7 @@ class AMRTimeSeries1D(TimeSeries1D):
     def interp(self, r, field_list: list[str] = None) -> UniformTimeSeries1D:
         return UniformTimeSeries1D.to_uniform(self, r, field_list)
 
-    def read_dir(self, path: str, basename: str = None, field_list: str | list[str] = None) -> None:
+    def read_dir(self, path: str, field_list: str | list[str] = None, basename: str = None) -> None:
         if basename is not None:
             files = glob(path + '/*' + basename + '*plt_cnt*')
         else:
@@ -449,8 +693,23 @@ class AMRTimeSeries1D(TimeSeries1D):
     def _select_times(self, t):
         return AMRTimeSeries1D.select_times(self, t)
 
+    interp.__doc__ = TimeSeries1D.interp.__doc__
+    save_hdf5.__doc__ = TimeSeries1D.save_hdf5.__doc__
+    read_hdf5.__doc__ = TimeSeries1D.read_hdf5.__doc__
+
 
 class UniformTimeSeries1D(TimeSeries1D):
+    """
+    Store a time series on a uniform grid.
+
+    A UniformTimeSeries1D can be constructed using
+    the `interp` method. This is more convenient for
+    plotting.
+
+    See Also
+    --------
+    interp
+    """
     _data: xr.Dataset
 
     def __init__(self):
@@ -459,6 +718,26 @@ class UniformTimeSeries1D(TimeSeries1D):
 
     @staticmethod
     def to_uniform(series: TimeSeries1D, r, field_list: list[str] = None) -> UniformTimeSeries1D:
+        """
+        Interpolate a TimeSeries1D on a uniform grid.
+
+        Parameters
+        ----------
+        series : TimeSeries1D
+            An AMRTimeSeries1D or UniformTimeSeries1D to interpolate.
+        r : array-like
+            A uniform grid of radii coordinates on which
+            to interpolate the `series`.
+            It must be uniform (linear or logarithmic).
+        field_list : None, 'all' or list, optional
+            A list of quantities to keep in the new series.
+            If None (default) or 'all', keep everything.
+
+        Returns
+        -------
+        series : UniformTimeSeries1D
+            A new interpolated time series.
+        """
         if isinstance(series, AMRTimeSeries1D):
             return UniformTimeSeries1D.interp_amr_series(series, r, field_list)
         elif isinstance(series, UniformTimeSeries1D):
@@ -651,8 +930,19 @@ class UniformTimeSeries1D(TimeSeries1D):
     def _select_times(self, t):
         return UniformTimeSeries1D.select_times(self, t)
 
+    select_times.__doc__ = AMRTimeSeries1D.select_times.__doc__
+    interp.__doc__ = TimeSeries1D.interp.__doc__
+    save_hdf5.__doc__ = TimeSeries1D.save_hdf5.__doc__
+    read_hdf5.__doc__ = TimeSeries1D.read_hdf5.__doc__
+
 
 class TimeSeriesView1D(object):
+    """
+    A view to a time series object.
+
+    This is typically obtained by indexing a
+    time series using the square-brackets (__getitem__) operator.
+    """
     _series: TimeSeries1D
     _field_list: list[str]
 
@@ -697,6 +987,24 @@ class TimeSeriesView1D(object):
         return TimeSeriesIterator1D(self._series, self._field_list)
 
     def at_time(self, t: float) -> np.ndarray | dict[str, np.ndarray]:
+        """
+        Get arrays of quantities at time `t`.
+
+        Parameters
+        ----------
+        t : float
+            A specific time.
+            The time closest to it available in the series
+            is used.
+
+        Returns
+        -------
+        data : array-like or dict
+            Returns a radial profile of the quantities
+            indexed in the view at time `t`.
+            It is a dictionary of arrays if multiple quantities are indexed
+            in the view.
+        """
         if isinstance(self._series, AMRTimeSeries1D):
             times = np.array(self._series.times())
             ind = int(np.argmin(np.abs(times - t)))
@@ -711,6 +1019,17 @@ class TimeSeriesView1D(object):
                 return {field: self._series._data[field].sel(t=t, method='nearest').to_numpy() for field in self._field_list}
 
     def as_array(self) -> np.ndarray | dict[str, np.ndarray]:
+        """
+        Return 2D time series arrays of indexed quantities.
+
+        Returns
+        -------
+        data : array-like or dict
+            2D time series numpy arrays of indexed quantities,
+            directly usable in e.g. matplotlib's `contour` and `pcolormesh`.
+            It is a dictionary of arrays if multiple quantities are indexed
+            in the view.
+        """
         if isinstance(self._series, AMRTimeSeries1D):
             raise RuntimeError('Cannot construct array from AMR time series')
         elif isinstance(self._series, UniformTimeSeries1D):
