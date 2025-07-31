@@ -948,11 +948,11 @@ class TimeSeriesView1D(object):
 
     def __init__(self, series: TimeSeries1D, field_list: str | list[str] = None):
         if field_list is None:
-            field_list = ['r', 'dr'] + series.field_list()
+            field_list = ['r', 'dr'] + series.field_list
         else:
             field_list = [field_list] if isinstance(field_list, str) else list(set(field_list))
-            if any(field not in ['r', 'dr'] + series.field_list() for field in field_list):
-                missing_fields = [field for field in field_list if field not in series.field_list()]
+            if any(field not in ['r', 'dr'] + series.field_list for field in field_list):
+                missing_fields = [field for field in field_list if field not in series.field_list]
                 raise RuntimeError(f'Field not in series: {missing_fields}')
 
         self._series = series
@@ -1056,7 +1056,7 @@ class TimeSeriesIterator1D(object):
 
     def __init__(self, series: TimeSeries1D, field_list: list[str] = None, reverse: bool = False):
         self._series = series
-        self._field_list = field_list or ['r', 'dr'] + series.field_list()
+        self._field_list = field_list or ['r', 'dr'] + series.field_list
         self._reverse = reverse
         self._ind = len(series) - 1 if reverse else 0
 

@@ -54,10 +54,13 @@ class DatRun(object):
             else:
                 return self._data.isel(field=key-1).to_numpy()
         elif isinstance(key, str):
-            if key == 'time':
+            if key == 'time' or key == 't':
                 return self._data.coords['time'].to_numpy()
             else:
                 return self._data.sel(field=key).to_numpy()
+        elif isinstance(key, float) or isinstance(key, slice) or \
+             (isinstance(key, (list, tuple, np.ndarray)) and all(isinstance(v, float) for v in key)):
+            return self.select_times(key)
         else:
             raise IndexError(f'Invalid index type: {type(key)}')
 
@@ -129,7 +132,7 @@ class DatFile(object):
 
     # TODO This may be redundant
     @staticmethod
-    def load(file) -> DatFile:
+    def load(file: str) -> DatFile:
         return DatFile.load_file(file)
 
     @classmethod
@@ -147,7 +150,7 @@ class DatFile(object):
         dat : DatFile
         """
         obj = cls()
-        obj.read_file(file)
+        obj.read(file)
         return obj
 
     def __checkloaded(self) -> bool:
@@ -237,7 +240,7 @@ class DatFile(object):
         new_run = DatRun(new_xda, self._source_file)
         return new_run
 
-    def read_file(self, file: str) -> None:
+    def read(self, file: str) -> None:
         """
         Read a dat file.
 

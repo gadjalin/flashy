@@ -19,6 +19,19 @@ _DEFAULT_DESCRIPTORS = [
         default_units='cgs'
     ),
     LabelDescriptor(
+        key='time post bounce',
+        aliases=['tbounce', 'tpb'],
+        symbol=r'$t - t_\mathrm{bounce}$',
+        short=r'$t_\mathrm{pb}$',
+        full='Time Post Bounce',
+        units={
+            'cgs': r'\mathrm{s}',
+            'si': r'\mathrm{s}',
+        },
+        log=False,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
         key='radius',
         aliases=['r'],
         symbol=r'$r$',
@@ -66,8 +79,8 @@ _DEFAULT_DESCRIPTORS = [
     LabelDescriptor(
         key='mass',
         aliases=['m'],
-        symbol=r'$m$',
-        short='M',
+        symbol=r'$M$',
+        short=r'$m$',
         full='Mass',
         units={
             'cgs': r'\mathrm{g}',

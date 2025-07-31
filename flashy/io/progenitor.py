@@ -1,4 +1,7 @@
+# For type hints
+from __future__ import annotations
 from typing import Callable
+
 import numpy as np
 import xarray as xr
 import re
@@ -29,8 +32,12 @@ class Progenitor(object):
         self._data = None
         self._loaded = False
 
+    @staticmethod
+    def load(file: str, parser: str | Callable = 'flash', include_fields: list[str] = None, exclude_fields: list[str] = None) -> Progenitor:
+        return Progenitor.load_file(file, parser, include_fields, exclude_fields)
+
     @classmethod
-    def load_file(cls, file: str, parser: str | Callable = 'flash', include_fields: list[str] = None, exclude_fields: list[str] = None):
+    def load_file(cls, file: str, parser: str | Callable = 'flash', include_fields: list[str] = None, exclude_fields: list[str] = None) -> Progenitor:
         """
         Load progenitor from a file.
 
@@ -66,11 +73,11 @@ class Progenitor(object):
             are mutually exclusive.
         """
         obj = cls()
-        obj.read_file(file, parser, include_fields, exclude_fields)
+        obj.read(file, parser, include_fields, exclude_fields)
         return obj
 
     @classmethod
-    def load_data(cls, r: np.ndarray, data: dict[str, np.ndarray], comment: str = ''):
+    def load_data(cls, r: np.ndarray, data: dict[str, np.ndarray], comment: str = '') -> Progenitor:
         """
         Load progenitor from data stored in memory.
 
@@ -179,7 +186,7 @@ class Progenitor(object):
         else:
             raise IndexError(f'Invalid key type: {type(key)}')
 
-    def read_file(self, file: str, parser: str | Callable = 'flash', include_fields: list[str] = None, exclude_fields: list[str] = None) -> None:
+    def read(self, file: str, parser: str | Callable = 'flash', include_fields: list[str] = None, exclude_fields: list[str] = None) -> None:
         file_parser = self._find_parser(parser)
 
         # Check optional parameters
@@ -261,7 +268,7 @@ class Progenitor(object):
         self._field_list = field_list
         self._loaded = True
 
-    def save_file(self, file: str):
+    def save(self, file: str):
         """
         Save the progenitor profile to a new file.
 
@@ -320,7 +327,7 @@ class Progenitor(object):
         else:
             raise RuntimeError(f'Invalid parser type: {type(parser)}')
 
-    read_file.__doc__ = load_file.__doc__
+    read.__doc__ = load_file.__doc__
 
 
 def flash_parser(file):
