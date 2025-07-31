@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 platforms = ["any"]
-packages = ["flashy", "flashy.io", "flashy.eos", "flashy.nuc"]
+packages = ["flashy", "flashy.io", "flashy.eos", "flashy.nuc", "flashy.plot"]
 
 [tool.setuptools.package-data]
 "*" = ["data/*.dat"]
