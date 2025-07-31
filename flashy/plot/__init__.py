@@ -68,7 +68,6 @@ def get_plot_scale(key: str) -> str:
     """
     return _REGISTRY.get_plot_scale(key)
 
-
 def register_label(descriptor: LabelDescriptor) -> None:
     _REGISTRY.register(desc)
 

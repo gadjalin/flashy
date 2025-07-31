@@ -1,4 +1,3 @@
-from enum import IntEnum
 import numpy as np
 from itertools import groupby
 
@@ -16,13 +15,13 @@ def get_bounce_time(logfile: str) -> float:
     ---
         The bounce time in seconds, or None if not found.
     """
-
     with open(logfile, 'r') as f:
         for line in f:
             if 'Bounce!' in line:
                 line = line.strip()
                 return float(line.split()[1])
     return None
+
 
 def get_midcell_dr(r):
     # Assume cell-centred coordinates in model
@@ -33,37 +32,39 @@ def get_midcell_dr(r):
     dr = faces[1:] - faces[:-1]
     return dr
 
+
 def calculate_shell_mass(r, dr, dens):
     """
     Calculates the mass of the shells.
 
     Arguments
     ---
-    r : list[float]
+    r : array-like
         The mid-cell radial coordinates of the shells.
-    dr : list[float]
-        The width of the shells.
-    dens : list[float]
+    dr : array-like
+        The size of the shells.
+    dens : array-like
         The average density in the shells.
     """
-
     return (4./3.) * np.pi * ((r + dr*0.5)**3 - (r - dr*0.5)**3) * dens
 
+
+# TODO Improve shock velocity calculation
 def calculate_shock(time, shock_radius):
     """
-    Calculates shock velocity.
+    Process shock radius from dat file.
 
-    Arguments
-    ---
-    time : list[float]
+    Parameters
+    ----------
+    time : array-like
         The list of times at which the shock radius is evaluated.
-    shock_rad : list[float]
+    shock_rad : array-like
         The shock radius at different times.
-        The min|max|mean_shock_radius column from the dat file.
+        Typically the min|max|mean shock radius column from the dat file.
 
     Returns
-    ---
-    A tuple of lists of floats, containing the processed shock times,
+    -------
+    Lists of floats, containing the processed shock times,
     radii and velocity.
     """
 
