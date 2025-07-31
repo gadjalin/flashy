@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 platforms = ["any"]
-packages = ["flashy", "flashy.io", "flashy.eos", "flashy.nuclear"]
+packages = ["flashy", "flashy.io", "flashy.eos", "flashy.nuc"]
 
 [tool.setuptools.package-data]
 "*" = ["data/*.dat"]
@@ -15,7 +15,7 @@ version = "0.1a_dev0"
 description = "A package for performing various FLASH related tasks."
 readme = "README.md"
 license = {file = "LICENSE"}
-dependencies = [ "numpy" ]
+dependencies = [ "numpy", "xarray", "h5py", "yt" ]
 maintainers = [
     {name = "Gaétan J.A.M. Jalin", email = "gaetan.jalin@tu-darmstadt.de"}
 ]
