@@ -1,3 +1,4 @@
+from __future__ import annotations
 import numpy as np
 import h5py
 from scipy.interpolate import RegularGridInterpolator
@@ -43,19 +44,23 @@ class EosTable(h5py.File):
     _minYe: float
     _maxYe: float
 
-    def __init__(self, filename, interp_method='linear'):
-        super(EosTable, self).__init__(filename, 'r')
-        self._init_table()
+    def __init__(self, file: str, interp_method: str = 'linear'):
+        super(EosTable, self).__init__(file, 'r')
+        self._init_table(interp_method)
+
+    @staticmethod
+    def load(file: str, interp_method: str = 'linear') -> EosTable:
+        return EosTable.load_file(file, interp_method)
 
     @classmethod
-    def from_file(cls, filename, interp_method='linear'):
+    def load_file(cls, file: str, interp_method: str = 'linear') -> EosTable:
         """
-        Initialise EoS table from hdf5 file
+        Initialise EoS table from hdf5 file.
         """
-        obj = cls(filename)
+        obj = cls(file, interp_method)
         return obj
 
-    def _init_table(self, interp_method='linear'):
+    def _init_table(self, interp_method: str = 'linear') -> None:
         # Get the table grid
         self._logRho = self['/logrho'][()]
         self._logTemp = self['/logtemp'][()]
@@ -91,21 +96,22 @@ class EosTable(h5py.File):
     def field_list(self) -> list:
         return self._vars
 
-    def __call__(self, mode: EOS_MODE, eosData: list | np.ndarray):
+    def __call__(self, mode: EOS_MODE, eosData: list[float]):
         return self.eos_nuclear(mode, eosData)
 
-    def call(self, mode: EOS_MODE, eosData: list | np.ndarray):
+    def call(self, mode: EOS_MODE, eosData: list[float]):
         """
-        Call the EoS for every zone in eosData
+        Call the EoS for every zone in eosData.
+
         It interpolates the tabulated EoS table according to the
         interpolation method requested at initialisation (default is linear).
 
         Parameters
         ----------
         mode : EOS_MODE
-            The mode in which to calculate the EOS
+            The mode in which to calculate the EOS.
 
-        eosData : list
+        eosData : array-like
             An array containing the eosData,
             as layed out by the EOS_VAR enumeration.
             The data of multiple cells can be passed at once,
@@ -120,7 +126,7 @@ class EosTable(h5py.File):
         vecLen = int(len(eosData) / EOS_VAR.NUM)
         # Make sure this is a numpy array, for convenience
         # and copy to preserve input data on the callers side
-        eosData = np.asarray(eosData, dtype=np.float64).copy()
+        eosData = np.array(eosData, dtype=np.float64)
 
         # Convenience constants for indexing eosData
         presStart = EOS_VAR.PRES*vecLen

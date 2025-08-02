@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 import numpy as np
 import re
 
@@ -42,30 +43,20 @@ _NAME_TO_Z = {
 _Z_TO_SYMBOL = {v: k for k,v in _SYMBOL_TO_Z.items()}
 _Z_TO_NAME = {v: k for k,v in _NAME_TO_Z.items()}
 
+@dataclass(frozen=True)
 class Nucleus(object):
-    __symbol: str
-    __name: str
-    __a: int
-    __z: int
+    A: int
+    Z: int
+    symbol: str = field(init=False)
+    name: str = field(init=False)
 
-    def __init__(self, a, z):
-        assert (z >= 0 and z <= 118), "Z does not correspond to any known element"
-        self.__symbol = _Z_TO_SYMBOL[z]
-        self.__name = _Z_TO_NAME[z]
-        self.__a = a
-        self.__z = z
-
-    def symbol(self):
-        return self.__symbol
-
-    def name(self):
-        return self.__name
-
-    def A(self):
-        return self.__a
-
-    def Z(self):
-        return self.__z
+    def __post_init__(self):
+        if self.Z not in _Z_TO_SYMBOL:
+            raise ValueError(f'No known element for atomic number {self.Z}')
+        symbol = _Z_TO_SYMBOL[self.Z]
+        name = _Z_TO_NAME[self.Z]
+        object.__setattr__(self, 'symbol', symbol)
+        object.__setattr__(self, 'name', name)
 
 
 def find_isotope(iid: str):
@@ -92,13 +83,13 @@ def find_isotope(iid: str):
 
     # Special cases
     if iid.lower() in ['n', 'neut', 'neutron']:
-        return Nucleus(1, 0)
-    if iid.lower() in ['p', 'h']:
-        return Nucleus(1, 1)
-    if iid.lower() in ['d', 'deut']:
-        return Nucleus(2, 1)
-    if iid.lower() in ['t']:
-        return Nucleus(3, 1)
+        return Nucleus(A=1, Z=0)
+    if iid.lower() in ['p', 'prot', 'h']:
+        return Nucleus(A=1, Z=1)
+    if iid.lower() in ['d', 'deut', 'deuterium']:
+        return Nucleus(A=2, Z=1)
+    if iid.lower() in ['t', 'trit', 'tritium']:
+        return Nucleus(A=3, Z=1)
 
     match = re.match(r'^([^\d]*)(.*)$', iid)
     if match is None:
@@ -129,11 +120,14 @@ def find_isotope(iid: str):
     else:
         A = A_parsed
 
-    return Nucleus(A, Z)
+    return Nucleus(A=A, Z=Z)
+
 
 def sort_isotope_id(iid):
     n = find_isotope(iid)
     return (n.Z(), n.A())
 
+
 def sort_nucleus(n):
     return (n.Z(), n.A())
+

@@ -2,20 +2,21 @@ import numpy as np
 from itertools import groupby
 
 
-def get_bounce_time(logfile: str) -> float:
+def get_bounce_time(log_file: str) -> float:
     """
     Finds the exact bounce time from the log file.
 
-    Arguments
-    ---
-    logfile : str
+    Parameters
+    ----------
+    log_file : str
         Path to the log file of the simulation.
 
     Returns
-    ---
+    -------
+    float or None
         The bounce time in seconds, or None if not found.
     """
-    with open(logfile, 'r') as f:
+    with open(log_file, 'r') as f:
         for line in f:
             if 'Bounce!' in line:
                 line = line.strip()
@@ -37,16 +38,50 @@ def calculate_shell_mass(r, dr, dens):
     """
     Calculates the mass of the shells.
 
-    Arguments
-    ---
+    Parameters
+    ----------
     r : array-like
         The mid-cell radial coordinates of the shells.
     dr : array-like
         The size of the shells.
     dens : array-like
         The average density in the shells.
+
+    Returns
+    -------
+    array-like
+        The masses of individual mass shells.
     """
     return (4./3.) * np.pi * ((r + dr*0.5)**3 - (r - dr*0.5)**3) * dens
+
+
+# TODO give m in grams and do conversion here
+def calculate_compactness(at_mass: float, m: list[float], r: list[float]) -> float:
+    """
+    Calculate compactness given mass and radius coordinates.
+
+    Parameters
+    ----------
+    at_mass : float
+        Compactness mass (in solar mass).
+    m : array-like
+        Mass coordinates at bounce (in solar mass).
+    r : array-like
+        Radius coordinates at bounce (in cm).
+
+    Returns
+    -------
+    float
+        Compactness at mass coordinate `at_mass`.
+
+    Raises
+    ------
+    ValueError
+        If `at_mass` is not found in `m`.
+    """
+    if at_mass > np.max(m) or at_mass < np.min(m):
+        raise ValueError(f'Given domain does not contain requested mass coordinate: {at_mass}')
+    return at_mass/(np.interp(at_mass, m, r)*1e-8)
 
 
 # TODO Improve shock velocity calculation

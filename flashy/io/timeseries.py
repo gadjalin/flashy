@@ -174,7 +174,7 @@ class TimeSeries1D(ABC):
 
     # Accessors
     @property
-    def times(self) -> list[float]:
+    def times(self) -> np.ndarray:
         """
         Return a sorted list of times in the series.
 
@@ -183,7 +183,7 @@ class TimeSeries1D(ABC):
         times : list
             The list of times stored in the series
         """
-        return self._times
+        return np.asarray(self._times)
 
     @property
     def field_list(self) -> list[str]:
@@ -241,7 +241,7 @@ class TimeSeries1D(ABC):
         The size of the time series.
 
         Effectively the number of times stored.
-        Equivalent to 'len(series.times())'.
+        Equivalent to 'len(series.times)'.
         """
         return len(self._times)
 
@@ -334,11 +334,16 @@ class TimeSeries1D(ABC):
             elif key in self._str_scalars:
                 return self._str_scalars[key]
             elif key in self._field_list:
-                return TimeSeriesView1D(self, key)
+                if len(self) == 1 and isinstance(self, AMRTimeSeries1D):
+                    return self._data[0][key].to_numpy()
+                elif len(self) == 1 and isinstance(self, UniformTimeSeries1D):
+                    return self._data[key].to_numpy()
+                else:
+                    return TimeSeriesView1D(self, key)
             elif key in ['t', 'r', 'dr'] and isinstance(self, UniformTimeSeries1D):
                 return self._data[key].to_numpy()
             elif key in ['t'] and isinstance(self, AMRTimeSeries1D):
-                return self.times()
+                return self.times
             elif key in ['r', 'dr'] and isinstance(self, AMRTimeSeries1D):
                 if len(self) == 1:
                     return self._data[0][key].to_numpy()
@@ -843,6 +848,10 @@ class UniformTimeSeries1D(TimeSeries1D):
     def interp(self, r: np.ndarray, field_list: list[str] = None):
         return UniformTimeSeries1D.to_uniform(self, r, field_list)
 
+    @property
+    def radii(self) -> np.ndarray:
+        return self._data.coords['r'].to_numpy()
+
     def save_hdf5(self, file: str) -> None:
         with h5py.File(file, 'w') as f:
             # Save real scalars
@@ -972,7 +981,7 @@ class TimeSeriesView1D(object):
                 else:
                     return TimeSeriesView1D(self._series, key)
             elif key == 't':
-                return self._series.times()
+                return self._series.times
             else:
                 raise IndexError(f'Key not in dataset: {key}')
         elif isinstance(key, (list, tuple, np.ndarray)):
@@ -1006,7 +1015,7 @@ class TimeSeriesView1D(object):
             in the view.
         """
         if isinstance(self._series, AMRTimeSeries1D):
-            times = np.array(self._series.times())
+            times = self._series.times
             ind = int(np.argmin(np.abs(times - t)))
             if len(self._field_list) == 1:
                 return self._series._data[ind][self._field_list[0]].to_numpy()
@@ -1077,10 +1086,10 @@ class TimeSeriesIterator1D(object):
                 data = self._series._data[self._ind][self._field_list[0]].to_numpy()
         elif isinstance(self._series, UniformTimeSeries1D):
             if len(self._field_list) > 1:
-                data = {field: self._series._data[field].isel(t=self._ind).to_numpy()
+                data = {field: self._series._data.isel(t=self._ind)[field].to_numpy()
                         for field in self._field_list}
             else:
-                data = self._series._data[self._field_list[0]].isel(t=self._ind).to_numpy()
+                data = self._series._data.isel(t=self._ind)[self._field_list[0]].to_numpy()
 
         self._ind = self._ind - 1 if self._reverse else self._ind + 1
         return time, data

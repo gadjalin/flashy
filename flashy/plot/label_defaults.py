@@ -77,6 +77,21 @@ _DEFAULT_DESCRIPTORS = [
         default_units='cgs'
     ),
     LabelDescriptor(
+        key='neutron star radius',
+        aliases=['pns radius'],
+        symbol=r'$R_\mathrm{NS}$',
+        short=r'$r_\mathrm{NS}$',
+        full='Neutron Star Radius',
+        units={
+            'cgs': r'\mathrm{cm}',
+            'si': r'\mathrm{m}',
+            'km': r'\mathrm{km}',
+            'sun': r'R_\odot',
+        },
+        log=False,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
         key='mass',
         aliases=['m'],
         symbol=r'$M$',
@@ -94,8 +109,8 @@ _DEFAULT_DESCRIPTORS = [
     LabelDescriptor(
         key='point mass',
         aliases=[],
-        symbol=r'$m_\mathrm{point}$',
-        short='M',
+        symbol=r'$M_\mathrm{point}$',
+        short=r'$m_\mathrm{point}$',
         full='Point Mass',
         units={
             'cgs': r'\mathrm{g}',
@@ -108,13 +123,28 @@ _DEFAULT_DESCRIPTORS = [
     LabelDescriptor(
         key='neutron star mass',
         aliases=['pns mass', 'ns mass'],
-        symbol=r'$m_\mathrm{NS}$',
-        short='M',
+        symbol=r'$M_\mathrm{NS}$',
+        short=r'$m_\mathrm{NS}$',
         full='Neutron Star Mass',
         units={
             'cgs': r'\mathrm{g}',
             'si': r'\mathrm{kg}',
             'sun': r'M_\odot',
+        },
+        log=False,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
+        key='mass accretion rate',
+        aliases=['mass accretion', 'mdot'],
+        symbol=r'$\dot{M}$',
+        short=r'$\dot{m}$',
+        full='Mass Accretion Rate',
+        units={
+            'cgs': r'\mathrm{g\,s^{-1}}',
+            'si': r'\mathrm{kg\,s^{-1}}',
+            'sun': r'M_\odot\,\mathrm{s^{-1}}',
+            'yr': r'M_\odot\,\mathrm{yr^{-1}}',
         },
         log=False,
         default_units='cgs'
@@ -366,6 +396,38 @@ _DEFAULT_DESCRIPTORS = [
         short='<Z>',
         full='Mean Atomic Charge',
         log=False,
+    ),
+    LabelDescriptor(
+        key='compactness 2.5',
+        aliases=['compactness', 'xi', 'xi2.5'],
+        symbol=r'$\xi_{2.5}}$',
+        short='Compactness',
+        full=r'Compactness at 2.5$M_\odot$',
+        log=False,
+    ),
+    LabelDescriptor(
+        key='compactness 1.75',
+        aliases=['xi1.75'],
+        symbol=r'$\xi_{1.75}}$',
+        short='Compactness',
+        full=r'Compactness at 1.75$M_\odot$',
+        log=False,
+    ),
+    LabelDescriptor(
+        key='mass fraction',
+        aliases=[],
+        symbol=r'$X$',
+        short='Mass Frac.',
+        full='Mass Fraction',
+        log=True,
+    ),
+    LabelDescriptor(
+        key='abundance',
+        aliases=[],
+        symbol=r'$Y$',
+        short='Abundance',
+        full='Abundance',
+        log=True,
     ),
 ]
 

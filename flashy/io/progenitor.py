@@ -1,9 +1,8 @@
 # For type hints
 from __future__ import annotations
-from typing import Callable
+from typing import Callable, Optional
 
 import numpy as np
-import xarray as xr
 import re
 
 
@@ -21,23 +20,21 @@ class Progenitor(object):
     # Private fields
     _source_file: str
     _comment: str
-    _field_list: list[str]
-    _data: xr.Dataset
+    _data: np.ndarray
     _loaded: bool
 
     def __init__(self):
         self._source_file = ''
         self._comment = ''
-        self._field_list = None
         self._data = None
         self._loaded = False
 
     @staticmethod
-    def load(file: str, parser: str | Callable = 'flash', include_fields: list[str] = None, exclude_fields: list[str] = None) -> Progenitor:
-        return Progenitor.load_file(file, parser, include_fields, exclude_fields)
+    def load(file: str, parser: str | Callable = 'flash') -> Progenitor:
+        return Progenitor.load_file(file, parser)
 
     @classmethod
-    def load_file(cls, file: str, parser: str | Callable = 'flash', include_fields: list[str] = None, exclude_fields: list[str] = None) -> Progenitor:
+    def load_file(cls, file: str, parser: str | Callable = 'flash') -> Progenitor:
         """
         Load progenitor from a file.
 
@@ -58,26 +55,13 @@ class Progenitor(object):
             - 'kepler': parser for KEPLER profiles
             Caution: mesa format is roughly the same for any version,
             but kepler files tend to be formatted differently.
-        include_fields : list[str], optional
-            A list of required variable names.
-            All other variables are discarded.
-            If both `include_fields` and `exclude_fields` are None (default),
-            all variables are stored.
-            The `include_fields` and `exclude_fields` parameters
-            are mutually exclusive.
-        exclude_fields : list[str], optional
-            A list of variable names to discard.
-            If both `include_fields` and `exclude_fields` are None (default),
-            all variables are stored.
-            The `include_fields` and `exclude_fields` parameters
-            are mutually exclusive.
         """
         obj = cls()
-        obj.read(file, parser, include_fields, exclude_fields)
+        obj.read(file, parser)
         return obj
 
     @classmethod
-    def load_data(cls, r: np.ndarray, data: dict[str, np.ndarray], comment: str = '') -> Progenitor:
+    def load_data(cls, r: np.ndarray, data: np.ndarray, comment: str = '') -> Progenitor:
         """
         Load progenitor from data stored in memory.
 
@@ -85,8 +69,9 @@ class Progenitor(object):
         ----------
         r : array-like
             Mid-cell radii of the progenitor profile in increasing order.
-        data : dict[str, array-like]
-            Dictionary with the name of the relevant variables as keys
+        data : array-like
+            Structured numpy array (or dictionary) with the name
+            of the relevant variables as keys
             and their values at each given cell radius.
         comment : str, optional
             An additional comment to be used when saving to a file.
@@ -104,8 +89,8 @@ class Progenitor(object):
 
     def __str__(self) -> str:
         source = self._source_file
-        n_fields = len(self._field_list)
-        n_cells = self._data.sizes['r']
+        n_fields = len(self._data.dtype.names)
+        n_cells = len(self._data['r'])
         if self._comment:
             return f'Progenitor @ {source}; {self._comment}; {n_fields} fields, {n_cells} cells'
         else:
@@ -116,7 +101,7 @@ class Progenitor(object):
 
     def __contains__(self, key: str) -> bool:
         self.__checkloaded()
-        return key in self._data.coords['field'].values
+        return key in self._data.dtype.names
 
     def __bool__(self) -> bool:
         return self.is_loaded()
@@ -127,7 +112,7 @@ class Progenitor(object):
         Get the list of available fields.
         """
         self.__checkloaded()
-        return self._field_list
+        return self._data.dtype.names
 
     @property
     def size(self) -> int:
@@ -135,7 +120,7 @@ class Progenitor(object):
         Get the number of cells in the progenitor.
         """
         self.__checkloaded()
-        return self._data.sizes['r']
+        return len(self._data['r'])
 
     @property
     def comment(self) -> str:
@@ -156,7 +141,7 @@ class Progenitor(object):
     def __getitem__(self, key):
         return self.get(key)
 
-    def get(self, key):
+    def get(self, key: str):
         """
         Get the data in the specified column.
 
@@ -177,72 +162,39 @@ class Progenitor(object):
             If the index type is invalid.
         """
         self.__checkloaded()
-        
-        if isinstance(key, str):
-            if key == 'r':
-                return self._data.coords['r'].to_numpy()
-            else:
-                return self._data.sel(field=key).to_numpy()
-        else:
-            raise IndexError(f'Invalid key type: {type(key)}')
+        return self._data[key]
 
-    def read(self, file: str, parser: str | Callable = 'flash', include_fields: list[str] = None, exclude_fields: list[str] = None) -> None:
+    def read(self, file: str, parser: str | Callable = 'flash') -> None:
         file_parser = self._find_parser(parser)
-
-        # Check optional parameters
-        if include_fields is not None and exclude_fields is not None:
-            raise RuntimeError('include_fields and exclude_fields are mutually exclusive')
-        if not isinstance(include_fields, list):
-            include_fields = []
-        if not isinstance(exclude_fields, list):
-            exclude_fields = []
 
         # Reset state and clear data
         self.clear()
 
         # Call parser and get data
-        comment, raw_data = file_parser(file)
+        comment, r, raw_data = file_parser(file)
 
-        # Check no missing included variables from progenitor file
-        if any(field not in raw_data.dtype.names for field in include_fields):
-            missing_fields = [field for field in include_fields if field not in raw_data.dtype.names]
-            raise RuntimeError(f'Requested field not in progenitor file: {missing_fields}')
+        field_list = [field for field in raw_data.dtype.names if field != 'r']
+        dtypes = [('r', np.float64)] + [(field, np.float64) for field in field_list]
+        data = np.empty(len(r), dtype=dtypes)
 
-        field_list = list(raw_data.dtype.names)
-        r = raw_data['r']
-        values = np.vstack([[row[field] for field in field_list[1:]] for row in raw_data])
-        data = xr.DataArray(
-            values,
-            coords={
-                'r': r,
-                'field': field_list[1:]
-            },
-            dims=['r', 'field']
-        )
-
-        # Remove unwanted columns
-        for field in exclude_fields:
-            if field in data.coords['field'].values:
-                data = data.drop_sel(field=field)
-
-        if include_fields:
-            for field in data.coords['field'].values:
-                if field not in include_fields:
-                    data = data.drop_sel(field=field)
+        data['r'] = r
+        for field in field_list:
+            data[field] = raw_data[field]
 
         self._source_file = file
         self._comment = comment.strip()
         self._data = data
-        self._field_list = ['r'] + list(data.coords['field'].values)
         self._loaded = True
 
-    def set_data(self, data: np.ndarray, comment: str = '') -> None:
+    def set_data(self, r: np.ndarray, raw_data: np.ndarray, comment: str = '') -> None:
         """
         Load progenitor from data stored in memory.
 
         Parameters
         ----------
-        data : np.ndarray
+        r : array-like
+            Radius coordinate of the data.
+        raw_data : array-like
             Structured numpy array where each row is a cell
             and the first column is the cell-centred radius 'r'.
         comment : str, optional
@@ -250,25 +202,26 @@ class Progenitor(object):
         """
         self.clear()
 
-        field_list = list(data.dtype.names)
-        r = data['r']
-        values = np.vstack([[row[field] for field in field_list[1:]] for row in data])
-        xda = xr.DataArray(
-            values,
-            coords={
-                'r': r,
-                'field': field_list[1:]
-            },
-            dims=['r', 'field']
-        )
+        if isinstance(raw_data, np.ndarray):
+            field_list = [field for field in raw_data.dtype.names if field != 'r']
+        elif isinstance(raw_data, dict):
+            field_list = [field for field in raw_data.keys() if field != 'r']
+        else:
+            raise ValueError(f'Invalid data type: {type(raw_data)}')
+
+        dtypes = [('r', np.float64)] + [(field, np.float64) for field in field_list]
+        data = np.empty(len(r), dtype=dtypes)
+
+        data['r'] = r
+        for field in field_list:
+            data[field] = raw_data[field]
 
         self._source_file = ''
         self._comment = comment.strip()
-        self._data = xda
-        self._field_list = field_list
+        self._data = data
         self._loaded = True
 
-    def save(self, file: str):
+    def save(self, file: str, field_list: Optional[list[str]] = None):
         """
         Save the progenitor profile to a new file.
 
@@ -276,25 +229,33 @@ class Progenitor(object):
         ----------
         file : str
             The name of the file where to save the progenitor.
+        field_list : array-like, optional
+            A list of field to save, in order.
 
         Raises
         ------
         RuntimeError
             If no data has been loaded in memory yet.
+        ValueError
+            If a field from `field_list` is not found.
         """
         self.__checkloaded()
 
+        if field_list is None:
+            field_list = self.field_list
+
+        field_list = [field for field in field_list if field != 'r']
+
         with open(file, 'w') as f:
             print("#", self._comment, file=f)
-            print("number of variables =", len(self._field_list) - 1, file=f)
+            print("number of variables =", len(field_list), file=f)
 
             # Don't print the 'r' var name
-            for field in self._field_list:
-                if field != 'r':
-                    print(field, file=f)
+            for field in field_list:
+                print(field, file=f)
 
-            for i in range(self._data.sizes['r']):
-                print(*([self._data.coords['r'].values[i]] + list(self._data.values[i])), file=f)
+            for i in range(self.size):
+                print(*([self._data['r'][i]] + [self._data[field][i] for field in field_list]), file=f)
 
         self._source_file = file
 
@@ -306,7 +267,6 @@ class Progenitor(object):
         """
         self._source_file = ''
         self._comment = ''
-        self._field_list = None
         self._data = None
         self._loaded = False
 
@@ -358,7 +318,7 @@ def flash_parser(file):
         encoding='ascii'
     )
 
-    return comment, data
+    return comment, data['r'], data
 
 
 def mesa_parser(file):
@@ -377,7 +337,9 @@ def mesa_parser(file):
     for name in data.dtype.names:
         data[name] = np.flip(data[name])
 
-    return comment, data
+    # TODO Store constants somewhere generic
+    Rsun = 6.957e10
+    return comment, data['rmid']*Rsun, data
 
 # TODO Update to new interface
 def kepler_parser(file):
