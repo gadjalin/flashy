@@ -12,6 +12,8 @@ from pathlib import Path
 import yt
 import h5py
 
+from ..analysis import calculate_shell_mass
+
 
 _TQDM_FORMAT = '{desc:<5.5}{percentage:3.0f}%|{bar:20}{r_bar}'
 _DEFAULT_FIELDS = ['dens', 'temp', 'pres', 'velx', 'entr', 'eint', 'ener', 'ye', 'sumy', 'gamc', 'gpot', 'deps']
@@ -183,7 +185,7 @@ class TimeSeries1D(ABC):
         times : list
             The list of times stored in the series
         """
-        return np.asarray(self._times)
+        return np.asarray(self._times, dtype=float)
 
     @property
     def field_list(self) -> list[str]:
@@ -249,11 +251,13 @@ class TimeSeries1D(ABC):
         return len(self._times)
 
     def __contains__(self, key: str) -> bool:
-        return (key in ['t', 'r', 'dr']) or (key in self._field_list) or \
-               (key in self._real_scalars) or (key in self._str_scalars)
+        return (key in ['t', 'r', 'dr']) or (key in self._field_list)
 
     def __str__(self) -> str:
-        return f'{self.__class__.__name__} @ {self._source_file}; {len(self._times)} times ({self._times[0]:.4f}-{self._times[-1]:.4f} [s])'
+        class_name = self.__class__.__name__
+        source = self._source_file
+        n_times = len(self._times)
+        return f'{class_name} @ {source}; {n_times} times ({self._times[0]:.4f}-{self._times[-1]:.4f} [s])'
 
     # Abstract methods
     @abstractmethod
@@ -323,7 +327,12 @@ class TimeSeries1D(ABC):
 
     @abstractmethod
     def clear(self) -> None:
-        pass
+        self._source_file = ''
+        self._times = None
+        self._field_list = None
+        self._real_scalars = None
+        self._str_scalars = None
+        self._loaded = False
 
     # Utility methods
     def _resolve_key(self, key):
@@ -540,6 +549,7 @@ class AMRTimeSeries1D(TimeSeries1D):
         last_file = files[-1]
         for i,file in tqdm(zip(range(len(files)), files), total=len(files), bar_format=_TQDM_FORMAT):
             time, data = self._read_plt_file(file, field_list)
+
             xds = xr.Dataset(
                     data_vars={k: ('r', v) for k,v in data.items() if k not in ['r']},
                     coords={'r': data['r']},
@@ -571,6 +581,10 @@ class AMRTimeSeries1D(TimeSeries1D):
 
         data['r'] = ad['r'].v.astype(np.float32)
         data['dr'] = ad['dr'].v.astype(np.float32)
+
+        # Add mass coordinate if possible
+        if 'dens' in data:
+            data['mass'] = np.cumsum(calculate_shell_mass(data['r'], data['dr'], data['dens']))
 
         return time, data
 
@@ -672,6 +686,11 @@ class AMRTimeSeries1D(TimeSeries1D):
                     else:
                         data_vars[key] = ('r', data)
 
+                if 'dens' in data_vars:
+                    m = np.cumsum(calculate_shell_mass(coords['r'], data_vars['dr'][1], data_vars['dens'][1]))
+                    data_vars['mass'] = ('r', m)
+                    self._field_list += ['mass']
+
                 # Save each timestep in a list of xarrays
                 xds = xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
                 self._data.append(xds)
@@ -682,13 +701,8 @@ class AMRTimeSeries1D(TimeSeries1D):
         self._loaded = True
 
     def clear(self) -> None:
-        self._source_file = ''
-        self._times = None
-        self._field_list = None
-        self._real_scalars = None
-        self._str_scalars = None
+        super().clear()
         self._data = None
-        self._loaded = False
 
     def _sort_series(self) -> None:
         sort_idx = np.argsort(self._times)
@@ -928,13 +942,8 @@ class UniformTimeSeries1D(TimeSeries1D):
         self._loaded = True
 
     def clear(self) -> None:
-        self._source_file = ''
-        self._times = None
-        self._field_list = None
-        self._real_scalars = None
-        self._str_scalars = None
+        super().clear()
         self._data = None
-        self._loaded = False
 
     def _select_times(self, t):
         return UniformTimeSeries1D.select_times(self, t)

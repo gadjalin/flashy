@@ -359,8 +359,8 @@ _DEFAULT_DESCRIPTORS = [
         short='Entr.',
         full='Entropy',
         units={
-            'cgs': r'$k_B\,\mathrm{baryon^{-1}}$',
-            'si': r'$k_B\,\mathrm{baryon^{-1}}$',
+            'cgs': r'k_B\,\mathrm{baryon^{-1}}',
+            'si': r'k_B\,\mathrm{baryon^{-1}}',
         },
         log=False,
         default_units='cgs'
