@@ -16,7 +16,7 @@ class EosTable(h5py.File):
     _energyShift: float
 
     # Table fields list and indexing
-    _vars: list
+    _vars: list[str]
     _tableData: np.ndarray
 
     # Grid info
@@ -90,10 +90,12 @@ class EosTable(h5py.File):
         self._tableInterpolator = RegularGridInterpolator((self._Ye, self._logTemp, self._logRho), self._tableData, \
                                                           method=interp_method, bounds_error=False, fill_value=None)
 
+    @property
     def energy_shift(self) -> float:
         return self._energyShift
 
-    def field_list(self) -> list:
+    @property
+    def field_list(self) -> list[str]:
         return self._vars
 
     def __call__(self, mode: EOS_MODE, eosData: list[float]):
