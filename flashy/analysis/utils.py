@@ -1,5 +1,6 @@
 import numpy as np
 from itertools import groupby
+from scipy.ndimage import gaussian_filter1d, median_filter
 
 
 def get_bounce_time(log_file: str) -> float:
@@ -106,17 +107,28 @@ def calculate_shock(time, shock_radius):
     shock_times_smooth = [0]
     shock_rad_smooth = [0]
     offset = 0
-    # The dat file usually contains duplicates of the same time.
+    # The dat file usually contains consecutive duplicate values of shock radius
+    # I think this is the shock detection that just gets stuck
+    # to one cell for a few steps before moving to the next. So of course it is
+    # not smooth. It also sometimes oscillates between two cells for a few time
+    # steps
     # Removes the duplicates for a smoother result.
     for k, g in groupby(shock_radius):
         offset += len(list(g))
         shock_times_smooth.append(time[offset - 1])
         shock_rad_smooth.append(k)
 
-    #t_bounce = time[np.min(np.nonzero(max_shock_rad)) - 2]
-    #shock_times = np.logspace(np.log10(t_bounce), np.log10(time[-1]), 1000)
-    shock_times = np.linspace(time[0], time[-1], 1000)
+    # Then calculate shock velocity
+    shock_vel_smooth = np.gradient(shock_rad_smooth, shock_times_smooth)
+
+    # Then interpolate on a (fine) regular time grid for filtering
+    shock_times = np.linspace(time[0], time[-1], int(1000*(time[-1] - time[0])))
     shock_rad = np.interp(shock_times, shock_times_smooth, shock_rad_smooth)
-    shock_vel = np.gradient(shock_rad, shock_times)
+    shock_vel = np.interp(shock_times, shock_times_smooth, shock_vel_smooth)
+
+    # Filter out sharp outliers
+    shock_vel = median_filter(shock_vel, size=5)
+    # Then smooth back to legitimate trend
+    shock_vel = gaussian_filter1d(shock_vel, sigma=2)
     return shock_times, shock_rad, shock_vel
 
