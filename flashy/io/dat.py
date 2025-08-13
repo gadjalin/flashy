@@ -47,6 +47,15 @@ class DatRun(object):
         return (key in (['time'] + list(self._data.coords['field'].values))) or \
                (key in np.arange(len(self._data.coords['field'].values) + 1))
 
+    def __len__(self) -> int:
+        return len(self._data.coords['time'].values)
+
+    def __str__(self):
+        source = self._source_file
+        n_columns = len(self._data.coords['field'].values) + 1 # Include 'time' column
+        n_rows = len(self._data.coords['time'].values)
+        return f'DatRun @ {source}; {n_columns} columns; {n_rows} rows'
+
     def __getitem__(self, key):
         if isinstance(key, int):
             if key == 0:
@@ -91,12 +100,6 @@ class DatRun(object):
             raise RuntimeError(f'Invalid type: {type(t)}')
 
         return DatRun(data, self._source_file)
-
-    def __str__(self):
-        source = self._source_file
-        n_columns = len(self._data.coords['field'].values) + 1 # Include 'time' column
-        n_rows = len(self._data.coords['time'].values)
-        return f'DatRun @ {source}; {n_columns} columns; {n_rows} rows'
 
     @property
     def field_list(self) -> list[str]:

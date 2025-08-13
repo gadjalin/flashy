@@ -178,6 +178,20 @@ _DEFAULT_DESCRIPTORS = [
         default_units='cgs'
     ),
     LabelDescriptor(
+        key='scaled density',
+        aliases=['rhor3'],
+        symbol=r'$\rho r^3$',
+        short='Scaled Dens.',
+        full='Scaled Density',
+        units={
+            'cgs': r'\mathrm{g}',
+            'si': r'\mathrm{kg}',
+            'sun': r'M_\odot',
+        },
+        log=True,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
         key='temperature',
         aliases=['T', 'temp'],
         symbol=r'$T$',

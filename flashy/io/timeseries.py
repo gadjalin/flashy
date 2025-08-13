@@ -689,7 +689,8 @@ class AMRTimeSeries1D(TimeSeries1D):
                 if 'dens' in data_vars:
                     m = np.cumsum(calculate_shell_mass(coords['r'], data_vars['dr'][1], data_vars['dens'][1]))
                     data_vars['mass'] = ('r', m)
-                    self._field_list += ['mass']
+                    if 'mass' not in self._field_list:
+                        self._field_list += ['mass']
 
                 # Save each timestep in a list of xarrays
                 xds = xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
@@ -1003,6 +1004,28 @@ class TimeSeriesView1D(object):
 
     def __iter__(self):
         return TimeSeriesIterator1D(self._series, self._field_list)
+
+# TODO
+#    def at_radius(self, r: float) -> np.ndarray | dict[str, np.ndarray]:
+#        if isinstance(self._series, AMRTimeSeries1D):
+#            if len(self._field_list) == 1:
+#                v = []
+#                for xds in self._series._data:
+#                    v.append(np.interp(r, xds['r'].values, xds[self._field_list[0]].values))
+#                return np.array(v)
+#            else:
+#                values = {}
+#                for field in self._field_list:
+#                    v = []
+#                    for xds in self._series._data:
+#                        v.append(np.interp(r, xds['r'].values, xds[field].values))
+#                    values[field] = np.asarray(v)
+#                return values
+#        elif isinstance(self._series, UniformTimeSeries1D):
+#            if len(self._field_list) == 1:
+#                return self._series._data[self._field_list[0]].interp(r=r).to_numpy()
+#            else:
+#                return {field: self._series._data[field].interp(r=r).to_numpy() for field in self._field_list}
 
     def at_time(self, t: float) -> np.ndarray | dict[str, np.ndarray]:
         """

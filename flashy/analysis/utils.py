@@ -118,17 +118,16 @@ def calculate_shock(time, shock_radius):
         shock_times_smooth.append(time[offset - 1])
         shock_rad_smooth.append(k)
 
-    # Then calculate shock velocity
-    shock_vel_smooth = np.gradient(shock_rad_smooth, shock_times_smooth)
-
     # Then interpolate on a (fine) regular time grid for filtering
     shock_times = np.linspace(time[0], time[-1], int(1000*(time[-1] - time[0])))
     shock_rad = np.interp(shock_times, shock_times_smooth, shock_rad_smooth)
-    shock_vel = np.interp(shock_times, shock_times_smooth, shock_vel_smooth)
+
+    # Then derive velocity
+    shock_vel = np.gradient(shock_rad, shock_times)
 
     # Filter out sharp outliers
-    shock_vel = median_filter(shock_vel, size=5)
+    shock_vel = median_filter(shock_vel, size=15)
     # Then smooth back to legitimate trend
-    shock_vel = gaussian_filter1d(shock_vel, sigma=2)
+    shock_vel = gaussian_filter1d(shock_vel, sigma=5)
     return shock_times, shock_rad, shock_vel
 
