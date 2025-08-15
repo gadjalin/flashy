@@ -1,6 +1,6 @@
 # For type hints
 from __future__ import annotations
-from typing import Callable, Optional
+from typing import List, Callable, Optional, Union
 
 import numpy as np
 import re
@@ -30,19 +30,56 @@ class Progenitor(object):
         self._loaded = False
 
     @staticmethod
-    def load(file: str, parser: str | Callable = 'flash') -> Progenitor:
+    def load(
+        file: str,
+        parser: Union[str, Callable] = 'flash'
+    ) -> Progenitor:
+        """
+        Load a progenitor.
+
+        Parameters
+        ----------
+        file : str
+            Path to a progenitor file.
+        parser : {'flash', 'mesa', 'kepler'} or Callable, default='flash'
+            By default, the FLASH format for progenitor files
+            is assumed. This variable can be use to force the use of
+            another parser, by passing a Callable
+            object which signature must be equivalent to
+            - custom_parser(file: str) -> (str, np.ndarray)
+            and return a numpy structured array.
+            Alternatively, the following string values can be used
+            - 'flash' or 'default': default flash parser
+            - 'mesa': parser for MESA log profiles
+            - 'kepler': parser for KEPLER profiles
+            Caution: mesa format is roughly the same for any version,
+            but kepler files tend to be formatted differently.
+
+        Returns
+        -------
+        Progenitor
+
+        See Also
+        --------
+        load_file
+        load_data
+        """
         return Progenitor.load_file(file, parser)
 
     @classmethod
-    def load_file(cls, file: str, parser: str | Callable = 'flash') -> Progenitor:
+    def load_file(
+        cls,
+        file: str,
+        parser: Union[str, Callable] = 'flash'
+    ) -> Progenitor:
         """
         Load progenitor from a file.
 
         Parameters
         ----------
         file : str
-            Path to the progenitor file.
-        parser : str or Callable, optional
+            Path to a progenitor file.
+        parser : {'flash', 'mesa', 'kepler'} or Callable, default='flash'
             By default, the FLASH format for progenitor files
             is assumed. This variable can be use to force the use of
             another parser, by passing a Callable
@@ -61,7 +98,12 @@ class Progenitor(object):
         return obj
 
     @classmethod
-    def load_data(cls, r: np.ndarray, data: np.ndarray, comment: str = '') -> Progenitor:
+    def load_data(
+        cls,
+        r: np.ndarray,
+        data: np.ndarray,
+        comment: str = ''
+    ) -> Progenitor:
         """
         Load progenitor from data stored in memory.
 
@@ -73,7 +115,7 @@ class Progenitor(object):
             Structured numpy array (or dictionary) with the name
             of the relevant variables as keys
             and their values at each given cell radius.
-        comment : str, optional
+        comment : str, default=''
             An additional comment to be used when saving to a file.
         """
         obj = cls()
@@ -88,13 +130,16 @@ class Progenitor(object):
             raise RuntimeError('No progenitor has been loaded yet!')
 
     def __str__(self) -> str:
-        source = self._source_file
-        n_fields = len(self._data.dtype.names)
-        n_cells = len(self._data['r'])
-        if self._comment:
-            return f'Progenitor @ {source}; {self._comment}; {n_fields} fields, {n_cells} cells'
+        if self._loaded:
+            source = self._source_file
+            n_fields = len(self._data.dtype.names)
+            n_cells = len(self._data['r'])
+            if self._comment:
+                return f'Progenitor @ {source}; {self._comment}; {n_fields} fields, {n_cells} cells'
+            else:
+                return f'Progenitor @ {source}; {n_fields} fields, {n_cells} cells'
         else:
-            return f'Progenitor @ {source}; {n_fields} fields, {n_cells} cells'
+            return f'Empty Progenitor'
 
     def __len__(self) -> int:
         return self.size
@@ -107,7 +152,7 @@ class Progenitor(object):
         return self.is_loaded()
 
     @property
-    def field_list(self) -> list[str]:
+    def field_list(self) -> List[str]:
         """
         Get the list of available fields.
         """
@@ -138,33 +183,15 @@ class Progenitor(object):
         self.__checkloaded()
         self._comment = comment
 
-    def __getitem__(self, key):
-        return self.get(key)
-
-    def get(self, key: str):
-        """
-        Get the data in the specified column.
-
-        Parameters
-        ----------
-        key : str
-            Name of the column.
-
-        Returns
-        -------
-        The data from the specified column.
-
-        Raises
-        ------
-        RuntimeError
-            If no data has been loaded in memory yet.
-        IndexError
-            If the index type is invalid.
-        """
+    def __getitem__(self, key: str):
         self.__checkloaded()
         return self._data[key]
 
-    def read(self, file: str, parser: str | Callable = 'flash') -> None:
+    def read(
+        self,
+        file: str,
+        parser: Union[str, Callable] = 'flash'
+    ) -> None:
         file_parser = self._find_parser(parser)
 
         # Reset state and clear data
@@ -186,7 +213,12 @@ class Progenitor(object):
         self._data = data
         self._loaded = True
 
-    def set_data(self, r: np.ndarray, raw_data: np.ndarray, comment: str = '') -> None:
+    def set_data(
+        self,
+        r: np.ndarray,
+        user_data: np.ndarray,
+        comment: str = ''
+    ) -> None:
         """
         Load progenitor from data stored in memory.
 
@@ -194,7 +226,7 @@ class Progenitor(object):
         ----------
         r : array-like
             Radius coordinate of the data.
-        raw_data : array-like
+        user_data : array-like
             Structured numpy array where each row is a cell
             and the first column is the cell-centred radius 'r'.
         comment : str, optional
@@ -202,26 +234,30 @@ class Progenitor(object):
         """
         self.clear()
 
-        if isinstance(raw_data, np.ndarray):
-            field_list = [field for field in raw_data.dtype.names if field != 'r']
-        elif isinstance(raw_data, dict):
-            field_list = [field for field in raw_data.keys() if field != 'r']
+        if isinstance(user_data, np.ndarray):
+            field_list = [field for field in user_data.dtype.names if field != 'r']
+        elif isinstance(user_data, dict):
+            field_list = [field for field in user_data.keys() if field != 'r']
         else:
-            raise ValueError(f'Invalid data type: {type(raw_data)}')
+            raise TypeError(f'Invalid data type: {type(user_data)}')
 
-        dtypes = [('r', np.float64)] + [(field, np.float64) for field in field_list]
+        dtypes = [(field, np.float64) for field in ['r'] + field_list]
         data = np.empty(len(r), dtype=dtypes)
 
         data['r'] = r
         for field in field_list:
-            data[field] = raw_data[field]
+            data[field] = user_data[field]
 
         self._source_file = ''
         self._comment = comment.strip()
         self._data = data
         self._loaded = True
 
-    def save(self, file: str, field_list: Optional[list[str]] = None):
+    def save(
+        self,
+        file: str,
+        field_list: Optional[List[str]] = None
+    ) -> None:
         """
         Save the progenitor profile to a new file.
 
@@ -321,6 +357,7 @@ def flash_parser(file):
     return comment, data['r'], data
 
 
+# TODO Different variables are sometimes saved for radius. Add a check
 def mesa_parser(file):
     comment = ''
 
@@ -341,13 +378,13 @@ def mesa_parser(file):
     Rsun = 6.957e10
     return comment, data['rmid']*Rsun, data
 
+
 # TODO Update to new interface
 def kepler_parser(file):
     """
     Tested with kepler progenitor files format from Woosley & Heger 2002 and Sukhbold 2018
-    But they are not always the same
+    But they are not always formatted the same
     """
-    raise NotImplementedError()
     comment = ''
 
     skip = 2
@@ -383,12 +420,15 @@ def kepler_parser(file):
             encoding='ascii'
     )
 
+    dtypes = [(field, np.float64) for field in ['r'] + list(raw_data.dtype.names)]
+    data = np.zeros(len(raw_data), dtype=dtypes)
+
     data['r'] = raw_data['radius']
     for field in raw_data.dtype.names:
-        if field != 'radius':
-            data[field] = raw_data[field]
+        data[field] = raw_data[field]
+
     # mass is cell mass
     data['mass'] = np.cumsum(data['mass'])
 
-    return comment, data
+    return comment, data['r'], data
 

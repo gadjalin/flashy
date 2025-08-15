@@ -1,3 +1,6 @@
+# For type hints
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 import numpy as np
 import re
@@ -58,6 +61,16 @@ class Nucleus(object):
         object.__setattr__(self, 'symbol', symbol)
         object.__setattr__(self, 'name', name)
 
+    def __str__(self) -> str:
+        sym = self.symbol.lower()
+        if sym == 'n0':
+            return 'neut'
+        else:
+            return f'{sym}{self.A}'
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
 
 def find_isotope(iid: str):
     """
@@ -97,7 +110,10 @@ def find_isotope(iid: str):
 
     symbol = match[1]
     weight = match[2]
-    Z = _SYMBOL_TO_Z[symbol.strip().title()]
+    try:
+        Z = _SYMBOL_TO_Z[symbol.strip().title()]
+    except KeyError:
+        raise ValueError(f'Not a valid isotope id: {iid}')
 
     A_parsed = int(weight)
     if (A_parsed < 100):
@@ -123,11 +139,11 @@ def find_isotope(iid: str):
     return Nucleus(A=A, Z=Z)
 
 
-def sort_isotope_id(iid):
+def sort_isotope_id(iid: str):
     n = find_isotope(iid)
     return (n.Z(), n.A())
 
 
-def sort_nucleus(n):
+def sort_nucleus(n: Nucleus):
     return (n.Z(), n.A())
 

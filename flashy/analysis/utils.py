@@ -57,7 +57,7 @@ def calculate_shell_mass(r, dr, dens):
 
 
 # TODO give m in grams and do conversion here
-def calculate_compactness(at_mass: float, m: list[float], r: list[float]) -> float:
+def calculate_compactness(at_mass, m, r) -> float:
     """
     Calculate compactness given mass and radius coordinates.
 

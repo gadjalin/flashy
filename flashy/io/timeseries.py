@@ -1,5 +1,7 @@
 # For type hints
 from __future__ import annotations
+from typing import List, Dict, Optional, Union
+
 # Abstract Base Class
 from abc import ABC, abstractmethod
 
@@ -12,11 +14,15 @@ from pathlib import Path
 import yt
 import h5py
 
-from ..analysis import calculate_shell_mass
+from ..analysis import calculate_shell_mass, get_midcell_dr
 
 
+# tqdm progress bar format
 _TQDM_FORMAT = '{desc:<5.5}{percentage:3.0f}%|{bar:20}{r_bar}'
-_DEFAULT_FIELDS = ['dens', 'temp', 'pres', 'velx', 'entr', 'eint', 'ener', 'ye', 'sumy', 'gamc', 'gpot', 'deps']
+# Common quantities found in CoreCollapse M1 simulation output
+_DEFAULT_FIELDS = ['dens', 'temp', 'pres', 'velx', 'entr', 'eint', 'ener', 'ye', 'sumy', 'gamc', 'gpot', 'deps', \
+                   'fnue', 'fnua', 'fnux', 'enue', 'enua', 'enux', 'rnue', 'rnua', 'rnux', 'shok']
+# Notably information on the Hybrid EoS
 _DEFAULT_REAL_SCALARS = ['bouncetime', 'hyb_trans', 'hyb_translow', 'hyb_offsetshift']
 
 
@@ -36,11 +42,11 @@ class TimeSeries1D(ABC):
     AMRTimeSeries1D
     UniformTimeSeries1D
     """
-    _source_file: str
-    _times: list[float]
-    _field_list: list[str]
-    _real_scalars: dict[str, float]
-    _str_scalars: dict[str, str]
+    _source_file: str                # In principle the path to the directory containing plot files
+    _times: List[float]              # The list of times stored in the series
+    _field_list: List[str]           # The quantities loaded in the series
+    _real_scalars: Dict[str, float]  # Extra information from 'real scalars'
+    _str_scalars: Dict[str, str]     # Extra string information
     _loaded: bool
 
     def __init__(self):
@@ -53,7 +59,11 @@ class TimeSeries1D(ABC):
 
     # Loading and saving
     @staticmethod
-    def load(path, field_list=None, basename=None) -> AMRTimeSeries1D | UniformTimeSeries1D:
+    def load(
+        path: Union[str, List[str]],
+        field_list: Union[str, List[str]] = 'default',
+        basename: Optional[str] = None
+    ) -> Union[AMRTimeSeries1D, UniformTimeSeries1D]:
         """
         Load a time series.
 
@@ -66,10 +76,10 @@ class TimeSeries1D(ABC):
         path : str or list
             Either a path to a directory, a list of paths to plot files,
             or a path to an existing time series hdf5 save.
-        field_list : list
+        field_list : {'all', 'default'} or list, default='default'
             Used to specify which quantities to save from plot files, when
             reading plot files.
-        basename : str
+        basename : str, optional
             Used to specify the basename of the plot files to read,
             when reading a directory
 
@@ -90,10 +100,14 @@ class TimeSeries1D(ABC):
         elif isinstance(path, (list, tuple, np.ndarray)) and all(isinstance(file, str) for file in path):
             return TimeSeries1D.load_plots(path, field_list)
         else:
-            raise RuntimeError(f'Unrecognised file type: {path}')
+            raise TypeError(f'Unrecognised file type: {path}')
 
     @staticmethod
-    def load_dir(path, field_list=None, basename=None) -> AMRTimeSeries1D:
+    def load_dir(
+        path: str,
+        field_list: Union[str, List[str]] = 'default',
+        basename: Optional[str] = None
+    ) -> AMRTimeSeries1D:
         """
         Load all plot files in a directory.
 
@@ -101,12 +115,12 @@ class TimeSeries1D(ABC):
         ----------
         path : str
             Path to a directory containing FLASH plot files.
-        field_list : None, 'all', or list, optional
+        field_list : {'all', 'default'} or list, default='default'
             A list of quantities to read and save
             from the plot files into the time series.
-            If None (default), reads most common quantities.
+            If 'default' (default), reads most common quantities.
             If 'all', read all available data.
-        basename : None or str, optional
+        basename : str, optional
             The plot files' basename for disambiguation if multiple
             simulations reside in the same directory.
 
@@ -119,7 +133,10 @@ class TimeSeries1D(ABC):
         return obj
 
     @staticmethod
-    def load_plots(files, field_list=None) -> AMRTimeSeries1D:
+    def load_plots(
+        files: List[str],
+        field_list: Union[str, List[str]] = 'default'
+    ) -> AMRTimeSeries1D:
         """
         Load a list of plot files.
 
@@ -127,10 +144,10 @@ class TimeSeries1D(ABC):
         ----------
         files : list
             A list of paths to plot files.
-        field_list : None, 'all', or list, optional
+        field_list : {'all', 'default'} or list, default='default'
             A list of quantities to read and save
             from the plot files into the time series.
-            If None (default), reads most common quantities.
+            If 'default' (default), reads most common quantities.
             If 'all', read all available data.
 
         Returns
@@ -142,7 +159,9 @@ class TimeSeries1D(ABC):
         return obj
 
     @staticmethod
-    def load_series(file) -> AMRTimeSeries1D | UniformTimeSeries1D:
+    def load_series(
+        file: str
+    ) -> Union[AMRTimeSeries1D, UniformTimeSeries1D]:
         """
         Load an existing time series save file.
 
@@ -188,7 +207,7 @@ class TimeSeries1D(ABC):
         return np.asarray(self._times, dtype=float)
 
     @property
-    def field_list(self) -> list[str]:
+    def field_list(self) -> List[str]:
         """
         Return a list of available quantities stored in the series.
 
@@ -203,7 +222,7 @@ class TimeSeries1D(ABC):
         return self._field_list
 
     @property
-    def real_scalars(self) -> dict[str, float]:
+    def real_scalars(self) -> Dict[str, float]:
         """
         A dictionary of scalar quantities from the simulation.
 
@@ -222,7 +241,7 @@ class TimeSeries1D(ABC):
         return self._real_scalars
 
     @property
-    def string_scalars(self) -> dict[str, float]:
+    def string_scalars(self) -> Dict[str, float]:
         """
         A dictionary of scalar string quantities.
 
@@ -255,9 +274,12 @@ class TimeSeries1D(ABC):
 
     def __str__(self) -> str:
         class_name = self.__class__.__name__
-        source = self._source_file
-        n_times = len(self._times)
-        return f'{class_name} @ {source}; {n_times} times ({self._times[0]:.4f}-{self._times[-1]:.4f} [s])'
+        if self._loaded:
+            source = self._source_file
+            n_times = len(self._times)
+            return f'{class_name} @ {source}; {n_times} times ({self._times[0]:.4f}-{self._times[-1]:.4f} [s])'
+        else:
+            return f'Empty {class_name}'
 
     # Abstract methods
     @abstractmethod
@@ -276,7 +298,11 @@ class TimeSeries1D(ABC):
         pass
 
     @abstractmethod
-    def interp(self, r: np.ndarray, field_list=None) -> UniformTimeSeries1D:
+    def interp(
+        self,
+        r: np.ndarray,
+        field_list: Union[str, List[str]] = 'all'
+    ) -> UniformTimeSeries1D:
         """
         Interpolates the data on a new, uniform grid.
 
@@ -286,10 +312,10 @@ class TimeSeries1D(ABC):
             The new grid on which to interpolate the data.
             It must be uniform (linear or logarithmic),
             typically using `numpy.linspace` and `numpy.logspace`.
-        field_list : None, 'all' or list, optional
-            A list of quantities to keep in the new interpolated
-            series. If None (default) or 'all', interpolate all the
-            quantities in the current series.
+        field_list : 'all' or list, default='all'
+            A list of quantities to keep from the
+            initial time series.
+            If 'all' (default), read all available data.
 
         Returns
         -------
@@ -372,17 +398,17 @@ class TimeSeries1D(ABC):
              isinstance(key, slice):
             return self._select_times(key)
         elif isinstance(key, int):
-            raise IndexError('Time selection must use physical time as float')
+            raise TypeError('Time selection must use physical time as float')
         else:
-            raise IndexError(f'Invalid key type: {type(key)}')
+            raise TypeError(f'Invalid key type: {type(key)}')
 
     @staticmethod
-    def _sanitise_field_list(field_list):
+    def _sanitise_field_list(field_list: Union[str, List[str]]) -> List[str]:
         """
         Check that all fields appear only once, and ensure
         'r' and 'dr' are not in the list, as they are implied.
         """
-        if field_list is None:
+        if field_list == 'default':
             field_list = _DEFAULT_FIELDS
         else:
             field_list = list(set(field_list)) # Get unique fields
@@ -393,18 +419,6 @@ class TimeSeries1D(ABC):
             field_list.remove('dr')
 
         return field_list
-
-    # TODO Put this in a more general "grid" module or something
-    # I also don't think this is 100% accurate
-    @staticmethod
-    def _calc_dr(r: np.ndarray):
-        # Assume uniform, cell-centred radii
-        edges = np.zeros(len(r) + 1, dtype=np.float32)
-        edges[1:-1] = 0.5 * (r[1:] + r[:-1])
-        edges[0] = r[0] - 0.5 * (r[1] - r[0])
-        edges[-1] = r[-1] + 0.5 * (r[-1] - r[-2])
-        dr = edges[1:] - edges[:-1]
-        return dr
 
 
 class AMRTimeSeries1D(TimeSeries1D):
@@ -425,11 +439,16 @@ class AMRTimeSeries1D(TimeSeries1D):
     _data: list[xr.Dataset]
 
     def __init__(self):
-        self._data = None
         super().__init__()
+        self._data = None
 
     @classmethod
-    def select_times(cls, series: AMRTimeSeries1D, t: float | list[float] | slice, field_list: list[str] = None) -> AMRTimeSeries1D:
+    def select_times(
+        cls,
+        series: AMRTimeSeries1D,
+        t: Union[float, List[float], slice],
+        field_list: Union[str, List[str]] = 'all'
+    ) -> AMRTimeSeries1D:
         """
         Select specific times in the series.
 
@@ -445,7 +464,7 @@ class AMRTimeSeries1D(TimeSeries1D):
             therefore, it is not guaranteed that the resulting
             series has the same length as `t`, if `t` is a list
             of times.
-        field_list : None, 'all' or list, optional
+        field_list : 'all' or list, default='all'
             A list of quantities to keep in the new series.
             If None (default) or 'all', keep everything.
 
@@ -458,7 +477,7 @@ class AMRTimeSeries1D(TimeSeries1D):
         obj = cls()
 
         # Sanitise field list
-        if field_list is None or field_list == 'all':
+        if field_list == 'all':
             field_list = series._field_list.copy()
         else:
             # Make sure we actually have the requested fields in this dataset
@@ -497,16 +516,25 @@ class AMRTimeSeries1D(TimeSeries1D):
     def __getitem__(self, key):
         return self._resolve_key(key)
 
-    def __iter__(self):
+    def __iter__(self) -> TimeSeriesIterator1D:
         return TimeSeriesIterator1D(self)
 
-    def __reversed__(self):
+    def __reversed__(self) -> TimeSeriesIterator1D:
         return TimeSeriesIterator1D(self, reverse=True)
 
-    def interp(self, r, field_list: list[str] = None) -> UniformTimeSeries1D:
+    def interp(
+        self,
+        r: np.ndarray,
+        field_list: Union[str, List[str]] = 'all'
+    ) -> UniformTimeSeries1D:
         return UniformTimeSeries1D.to_uniform(self, r, field_list)
 
-    def read_dir(self, path: str, field_list: str | list[str] = None, basename: str = None) -> None:
+    def read_dir(
+        self,
+        path: str,
+        field_list: Union[str, list[str]] = 'default',
+        basename: Optional[str] = None
+    ) -> None:
         if basename is not None:
             files = glob(path + '/*' + basename + '*plt_cnt*')
         else:
@@ -516,7 +544,11 @@ class AMRTimeSeries1D(TimeSeries1D):
         files = [f for f in files if 'forced_hdf5' not in f]
         self.read_files(files, field_list)
 
-    def read_files(self, files: list[str], field_list: list[str] = None) -> None:
+    def read_files(
+        self,
+        files: List[str],
+        field_list: Union[str, List[str]] = 'default'
+    ) -> None:
         self.clear()
         yt.set_log_level('error') # Shut up yt while reading many files
 
@@ -537,13 +569,13 @@ class AMRTimeSeries1D(TimeSeries1D):
         self._sort_series()
         self._read_real_scalars(last_file)
 
-        self._source_file = files[0]
+        self._source_file = path.dirname(path.realpath(files[0]))
         self._field_list = field_list
         self._loaded = True
         yt.set_log_level('info') # Reset yt logging
 
     # Private helper methods
-    def _read_plt_files(self, files: list[str], field_list: list[str]) -> str:
+    def _read_plt_files(self, files: List[str], field_list: List[str]) -> str:
         # TODO Parallelism
         last_time = 0
         last_file = files[-1]
@@ -565,7 +597,7 @@ class AMRTimeSeries1D(TimeSeries1D):
 
         return last_file
 
-    def _read_plt_file(self, file, field_list):
+    def _read_plt_file(self, file: str, field_list: List[str]):
         ds = yt.load(file)
         ad = ds.all_data()
 
@@ -588,7 +620,7 @@ class AMRTimeSeries1D(TimeSeries1D):
 
         return time, data
 
-    def _read_real_scalars(self, last_file: str):
+    def _read_real_scalars(self, last_file: str) -> None:
         # Read real scalars
         # Using last plot file to make sure 'bouncetime' is correct
         # use h5py directly because yt sometimes has trouble decoding these fields
@@ -617,6 +649,8 @@ class AMRTimeSeries1D(TimeSeries1D):
 
     def save_hdf5(self, file: str) -> None:
         with h5py.File(file, 'w') as f:
+            # Save source path
+            f.attrs['source path'] = self._source_file
             # Save real scalars
             dtype = np.dtype([('key', 'S80'), ('value', np.float64)])
             data = np.array([(k.ljust(80).encode('ascii'), v) for k,v in self._real_scalars.items()], dtype=dtype)
@@ -652,10 +686,12 @@ class AMRTimeSeries1D(TimeSeries1D):
 
         with h5py.File(file, 'r') as f:
             # Sanity check
-            file_type = f.attrs.get('type', '')
+            file_type = f.attrs.get('type', '').strip()
             if file_type != 'amr':
                 raise RuntimeError(f'Incorrect time series file type "{file_type}" (expected "amr")')
 
+            # Read source path for caching
+            self._source_file = f.attrs.get('source path', '').strip()
             # Read field list
             self._field_list = [field for field in f['step_0000'].keys() if field not in ['r', 'dr']]
             # Read real scalars
@@ -698,7 +734,6 @@ class AMRTimeSeries1D(TimeSeries1D):
 
         self._sort_series()
 
-        self._source_file = file
         self._loaded = True
 
     def clear(self) -> None:
@@ -737,7 +772,11 @@ class UniformTimeSeries1D(TimeSeries1D):
         super().__init__()
 
     @staticmethod
-    def to_uniform(series: TimeSeries1D, r, field_list: list[str] = None) -> UniformTimeSeries1D:
+    def to_uniform(
+        series: TimeSeries1D,
+        r: np.ndarray,
+        field_list: Union[str, List[str]] = 'all'
+    ) -> UniformTimeSeries1D:
         """
         Interpolate a TimeSeries1D on a uniform grid.
 
@@ -749,9 +788,9 @@ class UniformTimeSeries1D(TimeSeries1D):
             A uniform grid of radii coordinates on which
             to interpolate the `series`.
             It must be uniform (linear or logarithmic).
-        field_list : None, 'all' or list, optional
+        field_list : 'all' or list, default='all'
             A list of quantities to keep in the new series.
-            If None (default) or 'all', keep everything.
+            If 'all' (default), keep everything.
 
         Returns
         -------
@@ -766,12 +805,17 @@ class UniformTimeSeries1D(TimeSeries1D):
             raise NotImplementedError()
 
     @classmethod
-    def interp_amr_series(cls, series: AMRTimeSeries1D, r, field_list: list[str] = None) -> UniformTimeSeries1D:
+    def interp_amr_series(
+        cls,
+        series: AMRTimeSeries1D,
+        r: np.ndarray,
+        field_list: Union[str, List[str]] = 'all'
+    ) -> UniformTimeSeries1D:
         obj = cls()
         r = np.asarray(r, dtype=np.float32)
 
         # Sanitise field list
-        if field_list is None or field_list == 'all':
+        if field_list == 'all':
             field_list = series._field_list.copy()
         else:
             # Make sure we actually have the requested fields in this dataset
@@ -780,7 +824,7 @@ class UniformTimeSeries1D(TimeSeries1D):
         times = series._times.copy()
         # Reserve storage
         data = {field: np.zeros((len(times), len(r)), dtype=np.float32) for field in field_list}
-        data['dr'] = obj._calc_dr(r)
+        data['dr'] = get_midcell_dr(r)
         for i in range(len(series)):
             xds = series._data[i]
             r_amr = xds.coords['r'].to_numpy()
@@ -803,19 +847,24 @@ class UniformTimeSeries1D(TimeSeries1D):
         return obj
 
     @classmethod
-    def interp_uniform_series(cls, series: UniformTimeSeries1D, r, field_list: list[str] = None) -> UniformTimeSeries1D:
+    def interp_uniform_series(
+        cls,
+        series: UniformTimeSeries1D,
+        r: np.ndarray,
+        field_list: Union[str, List[str]] = 'all'
+    ) -> UniformTimeSeries1D:
         obj = cls()
         r = np.asarray(r, dtype=np.float32)
 
         # Sanitise field list
-        if field_list is None or field_list == 'all':
+        if field_list == 'all':
             field_list = series._field_list.copy()
         else:
             # Make sure we actually have the requested fields in this dataset
             field_list = [field for field in list(set(field_list)) if field in series._field_list]
 
         obj._data = series._data.interp(r=r, method='linear', assume_sorted=True)[field_list]
-        obj._data['dr'] = ('r', obj._calc_dr(r))
+        obj._data['dr'] = ('r', get_midcell_dr(r))
 
         obj._source_file = series._source_file
         obj._times = series._times.copy()
@@ -826,11 +875,16 @@ class UniformTimeSeries1D(TimeSeries1D):
         return obj
 
     @classmethod
-    def select_times(cls, series: UniformTimeSeries1D, t: float | list[float] | slice, field_list: list[str] = None) -> UniformTimeSeries1D:
+    def select_times(
+        cls,
+        series: UniformTimeSeries1D,
+        t: Union[float, List[float], slice],
+        field_list: Union[str, List[str]] = 'all'
+    ) -> UniformTimeSeries1D:
         obj = cls()
 
         # Sanitise field list
-        if field_list is None or field_list == 'all':
+        if field_list == 'all':
             field_list = series._field_list.copy()
         else:
             # Make sure we actually have the requested fields in this dataset
@@ -860,7 +914,11 @@ class UniformTimeSeries1D(TimeSeries1D):
     def __reversed__(self):
         return TimeSeriesIterator1D(self, reverse=True)
 
-    def interp(self, r: np.ndarray, field_list: list[str] = None):
+    def interp(
+        self,
+        r: np.ndarray,
+        field_list: Union[str, List[str]] = 'all'
+    ) -> UniformTimeSeries1D:
         return UniformTimeSeries1D.to_uniform(self, r, field_list)
 
     @property
@@ -903,10 +961,12 @@ class UniformTimeSeries1D(TimeSeries1D):
 
         with h5py.File(file, 'r') as f:
             # Sanity check
-            file_type = f.attrs.get('type', '')
+            file_type = f.attrs.get('type', '').strip()
             if file_type != 'uniform':
                 raise RuntimeError(f'Incorrect time series file type "{file_type}" (expected "uniform")')
 
+            # Read source path for caching
+            self._source_file = f.attrs.get('source path', '').strip()
             # Read field list
             self._field_list = [field for field in f['step_0000'].keys() if field not in ['r', 'dr']]
             # Read real scalars
@@ -939,7 +999,7 @@ class UniformTimeSeries1D(TimeSeries1D):
                 coords={'t': self._times, 'r': r},
                 attrs={'time': self._times}
         )
-        self._source_file = file
+
         self._loaded = True
 
     def clear(self) -> None:
@@ -963,10 +1023,14 @@ class TimeSeriesView1D(object):
     time series using the square-brackets (__getitem__) operator.
     """
     _series: TimeSeries1D
-    _field_list: list[str]
+    _field_list: List[str]
 
-    def __init__(self, series: TimeSeries1D, field_list: str | list[str] = None):
-        if field_list is None:
+    def __init__(
+        self,
+        series: TimeSeries1D,
+        field_list: Union[str, List[str]] = 'all'
+    ):
+        if field_list == 'all':
             field_list = ['r', 'dr'] + series.field_list
         else:
             field_list = [field_list] if isinstance(field_list, str) else list(set(field_list))
@@ -1027,7 +1091,7 @@ class TimeSeriesView1D(object):
 #            else:
 #                return {field: self._series._data[field].interp(r=r).to_numpy() for field in self._field_list}
 
-    def at_time(self, t: float) -> np.ndarray | dict[str, np.ndarray]:
+    def at_time(self, t: float) -> Union[np.ndarray, Dict[str, np.ndarray]]:
         """
         Get arrays of quantities at time `t`.
 
@@ -1059,7 +1123,7 @@ class TimeSeriesView1D(object):
             else:
                 return {field: self._series._data[field].sel(t=t, method='nearest').to_numpy() for field in self._field_list}
 
-    def as_array(self) -> np.ndarray | dict[str, np.ndarray]:
+    def as_array(self) -> Union[np.ndarray, dict[str, np.ndarray]]:
         """
         Return 2D time series arrays of indexed quantities.
 
@@ -1079,7 +1143,7 @@ class TimeSeriesView1D(object):
             else:
                 return {field: self._field_as_array(field) for field in self._field_list if field not in ['r', 'dr']}
 
-    def _field_as_array(self, field: str):
+    def _field_as_array(self, field: str) -> np.ndarray:
         if isinstance(self._series, AMRTimeSeries1D):
             raise RuntimeError('Cannot construct array from AMR time series')
         elif isinstance(self._series, UniformTimeSeries1D):
@@ -1091,17 +1155,25 @@ class TimeSeriesView1D(object):
 
 class TimeSeriesIterator1D(object):
     _series: TimeSeries1D
-    _field_list: list[str]
+    _field_list: List[str]
     _ind: int
     _reverse: bool
 
-    def __init__(self, series: TimeSeries1D, field_list: list[str] = None, reverse: bool = False):
+    def __init__(
+        self,
+        series: TimeSeries1D,
+        field_list: Union[str, List[str]] = 'all',
+        reverse: bool = False
+    ):
         self._series = series
-        self._field_list = field_list or ['r', 'dr'] + series.field_list
+        if field_list == 'all':
+            self._field_list = ['r', 'dr'] + series.field_list
+        else:
+            self._field_list = field_list
         self._reverse = reverse
         self._ind = len(series) - 1 if reverse else 0
 
-    def __iter__(self):
+    def __iter__(self) -> TimeSeriesIterator1D:
         return self
 
     def __next__(self):
@@ -1111,17 +1183,9 @@ class TimeSeriesIterator1D(object):
         time = self._series._times[self._ind]
 
         if isinstance(self._series, AMRTimeSeries1D):
-            if len(self._field_list) > 1:
-                data = {field: self._series._data[self._ind][field].to_numpy()
-                        for field in self._field_list}
-            else:
-                data = self._series._data[self._ind][self._field_list[0]].to_numpy()
+            data = self._series._data[self._ind][self._field_list]
         elif isinstance(self._series, UniformTimeSeries1D):
-            if len(self._field_list) > 1:
-                data = {field: self._series._data.isel(t=self._ind)[field].to_numpy()
-                        for field in self._field_list}
-            else:
-                data = self._series._data.isel(t=self._ind)[self._field_list[0]].to_numpy()
+            data = self._series._data.isel(t=self._ind)[self._field_list]
 
         self._ind = self._ind - 1 if self._reverse else self._ind + 1
         return time, data

@@ -1,5 +1,6 @@
 # For type hints
 from __future__ import annotations
+from typing import List, Union
 
 import numpy as np
 import xarray as xr
@@ -8,7 +9,7 @@ import re
 
 class DatRun(object):
     _source_file: str
-    _field_list: list[str]
+    _field_list: List[str]
     _data: xr.DataArray
 
     def __init__(self, data: np.ndarray, source: str):
@@ -50,7 +51,7 @@ class DatRun(object):
     def __len__(self) -> int:
         return len(self._data.coords['time'].values)
 
-    def __str__(self):
+    def __str__(self) -> str:
         source = self._source_file
         n_columns = len(self._data.coords['field'].values) + 1 # Include 'time' column
         n_rows = len(self._data.coords['time'].values)
@@ -73,7 +74,7 @@ class DatRun(object):
         else:
             raise IndexError(f'Invalid index type: {type(key)}')
 
-    def select_times(self, t: float | list[float] | slice) -> DatRun:
+    def select_times(self, t: Union[float, List[float], slice]) -> DatRun:
         """
         Select specific times in the run.
 
@@ -102,7 +103,7 @@ class DatRun(object):
         return DatRun(data, self._source_file)
 
     @property
-    def field_list(self) -> list[str]:
+    def field_list(self) -> List[str]:
         """
         A list of available fields (columns) in the dat file.
         """
@@ -123,8 +124,8 @@ class DatFile(object):
     is considered as one run.
     """
     _source_file: str
-    _field_list: list[str]
-    _runs: list[DatRun]
+    _field_list: List[str]
+    _runs: List[DatRun]
     _loaded: bool
 
     def __init__(self):
@@ -160,27 +161,27 @@ class DatFile(object):
         if not self._loaded:
             raise RuntimeError('No dat file has been loaded yet!')
 
-    def __contains__(self, key: str | int) -> bool:
+    def __contains__(self, key) -> bool:
         return key in self._field_list or \
                key in np.arange(len(self._field_list) + 1)
 
     def __getitem__(self, key):
         return self.get(key)
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self._loaded:
             source = self._source_file
             n_run = len(self._runs)
             n_fields = len(self._field_list)
             return f'DatFile @ {source}; {n_run} runs; {n_fields} fields;'
         else:
-            return 'No Dat file loaded'
+            return 'Empty Dat file'
 
     def __len__(self) -> int:
         return len(self._runs)
 
     @property
-    def field_list(self) -> list[str]:
+    def field_list(self) -> List[str]:
         """
         A list of available fields (columns) in the dat file.
         """
@@ -229,7 +230,7 @@ class DatFile(object):
         elif key is None:
             runs = self._runs[:]
         else:
-            raise IndexError(f'Invalid index type: {type(key)}')
+            raise TypeError(f'Invalid index type: {type(key)}')
 
         new_xda = None
         for run in runs:
@@ -282,7 +283,7 @@ class DatFile(object):
         self._runs = None
         self._loaded = False
 
-    def _parse_header_line(self, header: str) -> list[str]:
+    def _parse_header_line(self, header: str) -> List[str]:
         field_list = []
 
         field_width = 26
@@ -299,7 +300,7 @@ class DatFile(object):
 
         return field_list
 
-    def _parse_dat_runs(self, file: str, field_list: list[str]) -> list[DatRun]:
+    def _parse_dat_runs(self, file: str, field_list: List[str]) -> List[DatRun]:
         raw_data = []
         runs = []
         last_time = None
@@ -343,7 +344,7 @@ class DatFile(object):
 
         return runs
 
-    def _parse_dat_line(self, line: str) -> list[np.float64]:
+    def _parse_dat_line(self, line: str) -> List[float]:
         strs = line.split()
         values = []
         for s in strs:
@@ -355,7 +356,7 @@ class DatFile(object):
 
         return values
 
-    def _make_run(self, raw_data: list, field_list: list[str], source: str) -> DatRun:
+    def _make_run(self, raw_data: List[float], field_list: List[str], source: str) -> DatRun:
         # Make a structured numpy array and pass to DatRun constructor
         dtype = [(field, np.float64) for field in field_list]
         data = np.array([tuple(row) for row in raw_data], dtype=dtype)
