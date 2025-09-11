@@ -299,6 +299,19 @@ _DEFAULT_DESCRIPTORS = [
         default_units='cgs'
     ),
     LabelDescriptor(
+        key='gravitational potential energy',
+        aliases=['gravitational potential', 'gravitational energy', 'gpot'],
+        symbol=r'$\phi$',
+        short='Grav. Pot. Ener.',
+        full='Gravitational Potential Energy',
+        units={
+            'cgs': r'\mathrm{erg\,g^{-1}}',
+            'si': r'\mathrm{J\,kg^{-1}}',
+        },
+        log=True,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
         key='neutrino heating rate',
         aliases=['deps'],
         symbol=r'$\dot{Q_\nu}$',

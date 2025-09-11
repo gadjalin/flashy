@@ -11,7 +11,7 @@ packages = ["flashy", "flashy.io", "flashy.eos", "flashy.nuc", "flashy.plot", "f
 
 [project]
 name = "flashy"
-version = "0.1a_dev0"
+version = "0.3a_dev0"
 description = "A package for performing various FLASH related tasks."
 readme = "README.md"
 license = {file = "LICENSE"}
