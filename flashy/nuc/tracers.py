@@ -5,6 +5,7 @@ from typing import List, Dict, Optional, Union, Tuple
 import numpy as np
 import xarray as xr
 from glob import glob
+from tqdm import tqdm
 from pathlib import Path
 import h5py
 
@@ -25,7 +26,7 @@ def _pair_times(paths):
             for real_scalar in f['real scalars']:
                 key = real_scalar[0].decode('ascii').strip()
                 if key == 'time':
-                    time_pairs.append((int(np.trunc(real_scalar[1]*1e3)), file_path))
+                    time_pairs.append((real_scalar[1], file_path))
                     break
     return sorted(time_pairs, key=lambda pair: pair[0])
 
@@ -36,14 +37,18 @@ def _filter_pairs(pairs, step_size):
     previous_pair = pairs[0]
     previous_exists = False
     for pair in pairs[1:]:
-        if pair[0] > last_time + step_size:
+        if abs(pair[0] - last_time - float(step_size)*1e-3) < 1e-4:
+            last_time = pair[0]
+            filtered.append(pair[1])
+            previous_exists = False
+        elif (pair[0] - last_time - float(step_size)*1e-3) > 1e-4:
             if previous_exists:
                 last_time = previous_pair[0]
                 filtered.append(previous_pair[1])
                 previous_exists = False
             else:
                 actual_step_size = previous_pair[0] - last_time
-                raise RuntimeError(f'No plot file found within step size of {step_size}ms: closest is {actual_step_size}ms ({last_time}-{previous_pair[0]}ms)')
+                raise RuntimeError(f'No plot file found within step size of {step_size}ms: closest is {actual_step_size:.1f}ms ({last_time:.1f}-{previous_pair[0]:.1f}ms)')
         else:
             previous_exists = True
         previous_pair = pair
@@ -52,19 +57,19 @@ def _filter_pairs(pairs, step_size):
 
 def _filter_times(times, step_size):
     filtered = [times[0]]
-    last_time = int(times[0]*1e3)
     previous_time = times[0]
     previous_exists = False
     for time in times[1:]:
-        itime = int(time*1e3)
-        if itime > last_time + step_size:
+        if abs(time - filtered[-1] - float(step_size)*1e-3) < 1e-4:
+            filtered.append(time)
+            previous_exists = False
+        elif (time - filtered[-1] - float(step_size)*1e-3) > 1e-4:
             if previous_exists:
-                last_time = int(previous_time*1e3)
                 filtered.append(previous_time)
                 previous_exists = False
             else:
-                actual_step_size = int((previous_time - filtered[-1])*1e3)
-                raise RuntimeError(f'No plot file found within step size of {step_size}ms: closest is {actual_step_size}ms ({int(filtered[-1]*1e3)}-{int(previous_time*1e3)}ms)')
+                actual_step_size = (previous_time - filtered[-1])*1e3
+                raise RuntimeError(f'No plot file found within step size of {step_size}ms: closest is {actual_step_size:.1f}ms ({round(filtered[-1]*1e3)}-{round(previous_time*1e3)}ms)')
         else:
             previous_exists = True
         previous_time = time
@@ -96,7 +101,7 @@ class Tracers1D(object):
         step_size: int = 5,
         basename: Optional[str] = None
     ) -> TimeSeries1D:
-        __check_stepsize(step_size)
+        Tracers1D._check_stepsize(step_size)
 
         if basename is not None:
             print(f'Reading directory {path} for simulation {basename} with step size {step_size}ms')
@@ -111,10 +116,10 @@ class Tracers1D(object):
 
     @staticmethod
     def read_simulation_files(
-        files: List[str],
+        paths: List[str],
         step_size: int = 5
     ) -> TimeSeries1D:
-        __check_stepsize(step_size)
+        Tracers1D._check_stepsize(step_size)
 
         pairs = _pair_times(paths)
         filtered_paths = _filter_pairs(pairs, step_size)
@@ -126,10 +131,10 @@ class Tracers1D(object):
         path: str,
         step_size: int = 5
     ) -> TimeSeries1D:
-        __check_stepsize(step_size)
+        Tracers1D._check_stepsize(step_size)
 
         print(f'Reading time series {path} with step size {step_size}ms')
-        series = TimeSeries1D.load(file_path)
+        series = TimeSeries1D.load(path)
         missing_fields = [field for field in _REQUIRED_FIELDS if field not in series]
         if missing_fields:
             raise RuntimeError(f'Provided time series is missing some fields: {missing_fields}')
@@ -161,7 +166,7 @@ class Tracers1D(object):
         # Look at every time which mass shell crosses radius at r_start
         for t in tqdm(ts, bar_format=_TQDM_FORMAT):
             data = series[t]
-            mass_shells.append(float(data._data[0].interp(r=r)['mass'].to_numpy()))
+            mass_shells.append(float(data._data[0].interp(r=r_start)['mass'].to_numpy()))
 
         shells_const_radius = np.sort(mass_shells)
 
@@ -174,8 +179,8 @@ class Tracers1D(object):
 
         # Look at last time step which mass shells are behind the shock and
         # above shells calculated just before
-        for r in tqdm(rs, bar_format=_TQDM_FORMAT):
-            mass_shells.append(float(data._data[0].interp(r=r)['mass'].to_numpy()))
+        for r in tqdm(rs[1:-1], bar_format=_TQDM_FORMAT):
+            mass_shells.append(float(data.interp(r=r)['mass'].to_numpy()))
 
         shells_const_time = np.sort(mass_shells)
         return np.concatenate((shells_const_radius, shells_const_time))
@@ -237,7 +242,7 @@ class Tracers1D(object):
         # We start from the end of the simulation
         # And save data for every tracers
         L_from_f = lambda r, f: 4*np.pi*r**2*f
-        dtypes = [(field, np.float64) for field in fields]
+        dtypes = [(field, np.float64) for field in _TRAJ_FIELDS]
 
         times = series.times
         data_list = []
@@ -245,7 +250,7 @@ class Tracers1D(object):
         for t,data in tqdm(series, total=len(series), bar_format=_TQDM_FORMAT):
             # Get tracers locations
             rs = np.interp(masses, data['mass'], data['r'])
-            all_data = data.interp(r=rs)[fields + ['mass']]
+            all_data = data.interp(r=rs)[_TRAJ_FIELDS + ['mass']]
 
             # Swap r coordinate for tracer mass
             all_data = all_data.swap_dims({'r':'mass'})
@@ -277,15 +282,15 @@ class Tracers1D(object):
         Tmax: float = 1e10
     ) -> None:
         # Save data for every tracer until that tracer crosses
-        # the threshold temperature T_max
+        # the threshold temperature Tmax
         header = 't [s]           T [GK]           rho[g/cm^3]      r [km]           Ye               lnue [erg/s]     lanue [erg/s]    lnux [erg/s]     lanux [erg/s]    tnue [MeV]      tanue [MeV]      tnux [Mev]        tanux [Mev]     entr [k_B/baryon]\n----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'
 
         for i in tqdm(range(len(trajectories.coords['tracer'].to_numpy())), bar_format=_TQDM_FORMAT):
             # Get tracer data
             data = trajectories.isel(tracer=i)
 
-            # Cut where tracer stays below T_max
-            mask = data['temp'] < T_max
+            # Cut where tracer stays below Tmax
+            mask = data['temp'] < Tmax
             last_mask = mask[::-1].cumprod(dim='time')[::-1].astype(bool)
             cut_time = float(data.time.where(last_mask).dropna('time')[0])
             cut_data = data.sel(time=slice(cut_time, None))
@@ -298,7 +303,7 @@ class Tracers1D(object):
             np.savetxt(save_file, save_data, fmt=' %.6e   ', header=header)
 
     @staticmethod
-    def __check_stepsize(step_size: int) -> None:
+    def _check_stepsize(step_size: int) -> None:
         # Sanity check
         if not isinstance(step_size, int) or step_size < 1:
             raise ValueError(f'Step size is required to be a positive int in milliseconds: {step_size}')

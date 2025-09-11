@@ -10,6 +10,7 @@ import xarray as xr
 from glob import glob
 from tqdm import tqdm
 from pathlib import Path
+from os import path
 # TODO custom reader cause yt is heavy to import
 import yt
 import h5py
@@ -569,6 +570,9 @@ class AMRTimeSeries1D(TimeSeries1D):
         self._sort_series()
         self._read_real_scalars(last_file)
 
+        if 'mass' in self._data[0]:
+            field_list.append('mass')
+
         self._source_file = path.dirname(path.realpath(files[0]))
         self._field_list = field_list
         self._loaded = True
@@ -726,7 +730,7 @@ class AMRTimeSeries1D(TimeSeries1D):
                     m = np.cumsum(calculate_shell_mass(coords['r'], data_vars['dr'][1], data_vars['dens'][1]))
                     data_vars['mass'] = ('r', m)
                     if 'mass' not in self._field_list:
-                        self._field_list += ['mass']
+                        self._field_list.append('mass')
 
                 # Save each timestep in a list of xarrays
                 xds = xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
