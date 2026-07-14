@@ -60,14 +60,26 @@ class DatRun(object):
     def __getitem__(self, key):
         if isinstance(key, int):
             if key == 0:
-                return self._data.coords['time'].to_numpy()
+                if len(self) == 1:
+                    return float(self._data.coords['time'].to_numpy())
+                else:
+                    return self._data.coords['time'].to_numpy()
             else:
-                return self._data.isel(field=key-1).to_numpy()
+                if len(self) == 1:
+                    return float(self._data.isel(field=key-1).to_numpy())
+                else:
+                    return self._data.isel(field=key-1).to_numpy()
         elif isinstance(key, str):
             if key == 'time' or key == 't':
-                return self._data.coords['time'].to_numpy()
+                if len(self) == 1:
+                    return float(self._data.coords['time'].to_numpy())
+                else:
+                    return self._data.coords['time'].to_numpy()
             else:
-                return self._data.sel(field=key).to_numpy()
+                if len(self) == 1:
+                    return float(self._data.sel(field=key).to_numpy())
+                else:
+                    return self._data.sel(field=key).to_numpy()
         elif isinstance(key, float) or isinstance(key, slice) or \
              (isinstance(key, (list, tuple, np.ndarray)) and all(isinstance(v, float) for v in key)):
             return self.select_times(key)

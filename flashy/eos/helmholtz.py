@@ -7,22 +7,13 @@ except ModuleNotFoundError:
     import importlib_resources as resources
 from ._eos_var import EOS_VAR
 from ._eos_mode import EOS_MODE
+from ..constants import AMU_G, CLIGHT, Q_E, H_ERG, AVO, K_ERG, PI
 
-
-# TODO Move constants to generic place
-CLIGHT = 2.99792458e10 # Speed of light (cm/s)
-H = 6.6260755e-27 # Planck constant (erg s)
-AVO = 6.0221367e23 # Avogadro number
-AMU = 1.6605402e-24 # Atomic mass unit (g)
-QE = 4.8032068e-10 # Elementary charge (statC)
-
-KERG = 1.380658e-16
-KERGAVO = KERG * AVO
 
 SSOL = 5.67051e-5
 ASOL = 4.0 * SSOL / CLIGHT
 ASOLI3 = ASOL / 3.0
-SIONCON = (2.0 * np.pi * AMU * KERG) / H**2
+SIONCON = (2.0 * PI * AMU_G * K_ERG) / H_ERG**2
 
 # Table dimensions constants
 _EOSIMAX = 261 # This is the number of steps in density (I axis/rows)
@@ -203,8 +194,7 @@ class Helmholtz(object):
 
         vecLen = int(len(eosData) / EOS_VAR.NUM)
         # Make sure this is a numpy array, for convenience
-        # and copy to preserve input data on the callers side
-        eosData = np.asarray(eosData, dtype=np.float64).copy()
+        eosData = np.array(eosData, dtype=np.float64)
 
         # Convenience constants to index eosData
         presStart = EOS_VAR.PRES*vecLen
@@ -281,7 +271,7 @@ class Helmholtz(object):
             error = np.abs((tnew - self.tempRow) / self.tempRow)
             # Store the new temperature
             # Make sure to copy, so that this does not just reference the same object
-            self.tempRow = tnew[:]
+            self.tempRow = tnew+0
             # Check if we are freezing, if so set the temperature to smallt
             # and adjust the error so we don't wait for this one
             self.tempRow[tnew < _EOS_SMALLT] = _EOS_SMALLT
@@ -495,8 +485,8 @@ class Helmholtz(object):
             Ye    = zbar/abar
 
             # frequent combinations
-            kT      = KERG * temp
-            kAvoY   = KERGAVO / abar
+            kT      = K_ERG * temp
+            kAvoY   = K_ERG*AVO / abar
 
             # radiation section:
             prad    = ASOLI3 * temp**4
@@ -517,10 +507,10 @@ class Helmholtz(object):
             xni     =  dxnidd * dens
             pion    =  xni * kT
             dpiondd =  AVO * kT / abar
-            dpiondt =  xni * KERG
+            dpiondt =  xni * K_ERG
             eion    =  1.5 * pion / dens
             deiondd = (1.5 * dpiondd - eion) / dens
-            deiondt =  1.5 * xni * KERG / dens
+            deiondt =  1.5 * xni * K_ERG / dens
 
             # sackur-tetrode equation for the ion entropy of 
             # a single ideal gas characterized by abar
@@ -767,16 +757,16 @@ class Helmholtz(object):
             #  uniform background corrections & only the needed parts for speed
             #  plasg is the plasma coupling parameter
             #  split up calculations below -- they all used to depend upon a redefined z
-            z1        = (4.0/3.0) * np.pi
+            z1        = (4.0/3.0) * PI
             s1        = z1 * xni
             dsdd      = z1 * dxnidd
             lami      = 1.0/s1**(1.0/3.0)
             z2        = -(1.0/3.0) * lami/s1
             lamidd    = z2 * dsdd
-            plasg     = zbar**2 * QE**2/(kT*lami)
+            plasg     = zbar**2 * Q_E**2/(kT*lami)
             z3        = -plasg / lami
             plasgdd   = z3 * lamidd
-            plasgdt   = -plasg / kT * KERG
+            plasgdt   = -plasg / kT * K_ERG
             #  yakovlev & shalybkov 1989 equations 82, 85, 86, 87
             if (plasg >= 1.0):
                 x4       = plasg**(1.0/4.0)
@@ -878,7 +868,7 @@ class Helmholtz(object):
             # store the output
             self.ptotRow[i] = pres         # used by Eos as EOS_PRES = PRES_VAR
             self.etotRow[i] = ener         # used by Eos as EOS_EINT = EINT_VAR
-            self.stotRow[i] = entr/KERGAVO # this is entropy, used by Eos as EOS_ENTR (masked)
+            self.stotRow[i] = entr/(K_ERG*AVO) # this is entropy, used by Eos as EOS_ENTR (masked)
             self.dpdRow[i]  = dpresdd  # used as EOS_DPD
             self.dptRow[i]  = dpresdt  # used as EOS_DPT  ALWAYS used by MODE_DENS_PRES in Eos.F90
             self.dedRow[i]  = denerdd  # used as EOS_DED

@@ -1,152 +1,135 @@
+from __future__ import annotations
+from typing import Union, Optional, List, Dict
+from dataclasses import dataclass, field
+
 import numpy as np
 try:
     from importlib import resources
 except ModuleNotFoundError:
     import importlib_resources as resources
-from .nucleus import sort_isotope_id
 
+from ..constants import N_EXC, P_EXC
 
-# TODO Move constants someplace generic
-MP = 938.272046 # Proton mass MeV/c2
-ME = 0.5110     # Electron mass MeV/c2
-MN = 939.565379 # Neutron mass MeV/c2
-AMU = 931.494061# Atomic mass unit MeV/c2
-PEXC = (MP + ME - AMU) # Proton mass excess
-NEXC = (MN - AMU)      # Neutron mass excess
-CLIGHT = 2.99792458e10 # Speed of light cm/s
-AVO = 6.0221367e23 # Avogadro number
-H = 6.6260755e-27 # Planck constant erg.s
-KERG = 1.380658e-16 # Boltzmann constant cgs
 
 # Temperature grid in GK for the partition functions
 _WINVN_TEMP_GRID = np.array( \
     [1e-1, 1.5e-1, 2e-1, 3e-1, 4e-1, 5e-1, 6e-1, 7e-1, 8e-1, 9e-1, \
      1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0] \
 )
+_HTPF_TEMP_GRID = np.array( \
+    [1e-1, 1.5e-1, 2e-1, 3e-1, 4e-1, 5e-1, 6e-1, 7e-1, 8e-1, 9e-1, \
+     1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, \
+     12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0, 35.0, 40.0, 45.0, 50.0, \
+     55.0, 60.0, 65.0, 70.0, 75.0, 80.0, 85.0, 90.0, 95.0, 100.0, 105.0, 110.0, 115.0, 120.0, \
+     125.0, 130.0, 135.0, 140.0, 145.0, 150.0, 155.0, 160.0, 165.0, 170.0, 175.0, 180.0, 190.0, \
+     200.0, 210.0, 220.0, 230.0, 240.0, 250.0, 275.0] \
+)
 
 
-class Nuclide(object):
-    _name: str
-    _A: float
-    _Z: float
-    _N: float
-    _spin: float
-    _mass_excess: float
-    _pf: np.ndarray
-    
-    def __init__(self, name, A, Z, N, spin, mass_excess, pf):
-        self._name = name
-        self._A = A
-        self._Z = Z
-        self._N = N
-        self._spin = spin
-        self._mass_excess = mass_excess
-        self._pf = np.asarray(pf)
+@dataclass(frozen=True)
+class WinvnNucleus(object):
+    name: str
+    A: float
+    Z: float
+    N: float
+    spin: float
+    mass_excess: float
+    pf: np.ndarray               # Partition function
+    B: float = field(init=False) # Binding energy
 
-    def get_A(self):
-        return self._A
+    def __post_init__(self):
+        B = self.Z*P_EXC + self.N*N_EXC - self.mass_excess
+        object.__setattr__(self, 'B', B)
 
-    def get_Z(self):
-        return self._Z
+    def update_pf(self, new_pf) -> None:
+        object.__setattr__(self, 'pf', new_pf)
 
-    def get_N(self):
-        return self._N
-
-    def get_spin(self):
-        return self._spin
-
-    def get_mass_excess(self):
-        return self._mass_excess
-
-    def get_binding_energy(self):
-        return self._Z*PEXC + self._N*NEXC - self._mass_excess
-
-    def get_pf(self):
-        return self._pf.copy()
-    
-    def eval_pf(self, t9):
-        # Simple linear interpolation
-        #if interpolation == 'linear':
-        return np.interp(t9, _WINVN_TEMP_GRID, self._pf)
-        #elif interpolation == 'linlog':
-            #return np.exp(np.interp(t9, _WINVN_TEMP_GRID, np.log10(self._pf)))
-        #else:
-            #raise RuntimeError(f'Invalid interpolation scheme {interpolation}')
+    def eval_pf(self, t9: float) -> float:
+        # lin-log interpolation
+        if len(self.pf) == len(_WINVN_TEMP_GRID):
+            return np.exp(np.interp(t9, _WINVN_TEMP_GRID, np.log(self.pf)))
+        elif len(self.pf) == len(_HTPF_TEMP_GRID):
+            return np.exp(np.interp(t9, _HTPF_TEMP_GRID, np.log(self.pf)))
+        else:
+            raise RuntimeError('Unknown partition function')
 
 
 class WinvnDatabase(object):
-    _initialised: bool
-    _names: list
-    _nuclides: dict
+    _nuclei: Dict[str, WinvnNucleus]
 
-    def __init__(self):
-        self._read_winvn()
-        self._names.sort(key=sort_isotope_id)
+    def __init__(self, winvn_path: Optional[str] = None, htpf_path: Optional[str] = None):
+        if winvn_path is None:
+            winvn_path = str(resources.files("flashy.nuc").joinpath('data/winvne_v2.0.dat'))
 
-    def _read_winvn(self):
-        self._initialised = False
-        winvn_path = resources.files("flashy.nuclear").joinpath('data/winvne_v2.0.dat')
-        with winvn_path.open('r') as winvn:
-            # skip first 2 lines
-            winvn.readline()
-            winvn.readline()
+        self._read_winvn_file(winvn_path)
+        if htpf_path is not None:
+            self._read_htpf_file(htpf_path)
 
-            # skip nuclides name. Last is repeated twice
-            count = 0
-            previous_name = ""
-            name = winvn.readline()
-            while (name != previous_name):
-                previous_name = name
-                name = winvn.readline()
-                count += 1
+    def __contains__(self, key: str) -> bool:
+        return key in self._nuclei
 
-            # Read database
-            self._names = []
-            self._nuclides = {}
-            while True:
-                line = winvn.readline().strip()
-                if not line:
-                    break
+    def __getitem__(self, key: str) -> WinvnNucleus:
+        return self._nuclei[key]
 
-                # Read nuclide definition
+    def __len__(self) -> int:
+        return len(self._nuclei)
+
+    @property
+    def species(self) -> List[str]:
+        return list(self._nuclei.keys())
+
+    @property
+    def nuclei(self) -> List[str]:
+        return list(self._nuclei.values())
+
+    def _read_winvn_file(self, winvn_path: str) -> None:
+        self._nuclei = {}
+        with open(winvn_path, 'r') as winvn_file:
+            # Skip first 2 lines
+            line = next(winvn_file)
+            line = next(winvn_file)
+
+            # Skip list of nuclides
+            for line in winvn_file:
+                # Skip comments, empty lines, and initial list of nuclides
+                if (line.startswith('#') or len(line.rstrip()) <= 6):
+                    continue
+
+                # Reached database entry
+                # WinvnNucleus properties
                 header = line.split()
-                name        = header[0]
+                name        = str(header[0])
                 A           = float(header[1])
                 Z           = float(header[2])
                 N           = float(header[3])
                 spin        = float(header[4])
                 mass_excess = float(header[5])
-                # Read partition function coefficients
-                pf = np.loadtxt([winvn.readline() for i in range(3)])
+
+
+                # Partition function
+                pf = np.loadtxt([next(winvn_file) for i in range(3)])
                 pf = np.concatenate(pf)
 
-                self._names.append(name)
-                self._nuclides[name] = Nuclide(name, A, Z, N, spin, mass_excess, pf)
-        
-        self._initialised = True
+                # Store nuclide entry
+                self._nuclei[name] = WinvnNucleus(name, A, Z, N, spin, mass_excess, pf)
 
-    def __getitem__(self, index):
-        return self.get_nuclide(index)
+    def _read_htpf_file(self, htpf_path: str) -> None:
+        with open(htpf_path, 'r') as htpf_file:
+            for line in htpf_file:
+                # Skip comments and empty lines
+                if (line.startswith('#') or len(line.rstrip()) < 1):
+                    continue
 
-    def get_nuclide(self, index):
-        if isinstance(index, int):
-            return self._nuclides[self._names[i]]
-        elif isinstance(index, str):
-            return self._nuclides[index]
-        else:
-            raise RuntimeError(f'Invalid index type {type(index)}')
+                # Read entry
+                entry = line.split()
+                name        = str(entry[0])
+                #Z           = float(entry[1])
+                #A           = float(entry[2])
+                #N           = A - Z
+                #spin        = float(entry[3])
+                pf          = np.float64(entry[4:])
 
-    def size(self):
-        return len(self._nuclides)
+                # Update corresponding partition function
+                pf = np.concatenate((self._nuclei[name].pf, pf))
+                self._nuclei[name].update_pf(pf)
 
-    def names(self):
-        return self._names
-
-    def contains(self, name):
-        return name in self._names
-
-    def contains_nuclide(self, Z, A):
-        if A < Z:
-            raise RuntimeError(f'Invalid atomic configuration Z={Z}, A={A}')
-        pred = lambda item: (round(item.get_A()) == round(A)) and (round(item.get_Z()) == round(Z))
-        return next(filter(pred, self._nuclides.values()), None) is not None

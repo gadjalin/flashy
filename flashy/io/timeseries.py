@@ -15,7 +15,7 @@ from os import path
 import yt
 import h5py
 
-from ..analysis import calculate_shell_mass, get_midcell_dr
+from ..post import calculate_shell_mass, get_midcell_dr
 
 
 # tqdm progress bar format
@@ -212,8 +212,8 @@ class TimeSeries1D(ABC):
         """
         Return a list of available quantities stored in the series.
 
-        The 'r' (radius) and 'dr' (cell size) quantities are implicitly available.
-        For UniformTimeSeries1D, the 't' (time) is also available.
+        The 'r' (radius) and 'dr' (cell size) fields are implicitly available.
+        For UniformTimeSeries1D, the 't' (or 'time') field is also available.
 
         Returns
         -------
@@ -271,7 +271,7 @@ class TimeSeries1D(ABC):
         return len(self._times)
 
     def __contains__(self, key: str) -> bool:
-        return (key in ['t', 'r', 'dr']) or (key in self._field_list)
+        return (key in ['t', 'time', 'r', 'dr']) or (key in self._field_list)
 
     def __str__(self) -> str:
         class_name = self.__class__.__name__
@@ -371,14 +371,16 @@ class TimeSeries1D(ABC):
                 return self._str_scalars[key]
             elif key in self._field_list:
                 if len(self) == 1 and isinstance(self, AMRTimeSeries1D):
-                    return self._data[0][key].to_numpy()
+                    return self._data[0][key].to_numpy().ravel()
                 elif len(self) == 1 and isinstance(self, UniformTimeSeries1D):
-                    return self._data[key].to_numpy()
+                    return self._data[key].to_numpy().ravel()
                 else:
                     return TimeSeriesView1D(self, key)
-            elif key in ['t', 'r', 'dr'] and isinstance(self, UniformTimeSeries1D):
+            elif key in ['r', 'dr'] and isinstance(self, UniformTimeSeries1D):
                 return self._data[key].to_numpy()
-            elif key in ['t'] and isinstance(self, AMRTimeSeries1D):
+            elif key in ['t', 'time'] and isinstance(self, UniformTimeSeries1D):
+                return self._data['t'].to_numpy()
+            elif key in ['t', 'time'] and isinstance(self, AMRTimeSeries1D):
                 return self.times
             elif key in ['r', 'dr'] and isinstance(self, AMRTimeSeries1D):
                 if len(self) == 1:
@@ -494,7 +496,7 @@ class AMRTimeSeries1D(TimeSeries1D):
             if step is None:
                 begin = int(np.argmin(np.abs(times - start)))
                 end = int(np.argmin(np.abs(times - stop)))
-                ind = list(range(begin, end))
+                ind = list(range(begin, end+1))
             else:
                 ind = [int(np.argmin(np.abs(times - time))) for time in np.arange(start, stop, step)]
         elif isinstance(t, float):
@@ -666,11 +668,11 @@ class AMRTimeSeries1D(TimeSeries1D):
             # Save time series grid type
             f.attrs['type'] = 'amr'
 
-            f.create_dataset('t', data=self._times, compression=None)
+            f.create_dataset('time', data=self._times, compression=None)
 
             # Save time series
             for xds,i in zip(self._data, range(len(self._times))):
-                grp = f.create_group(f'step_{i:>04}')
+                grp = f.create_group(f'plt_{i:>04}')
 
                 for attr in xds.attrs:
                     grp.attrs[attr] = xds.attrs[attr]
@@ -697,7 +699,7 @@ class AMRTimeSeries1D(TimeSeries1D):
             # Read source path for caching
             self._source_file = f.attrs.get('source path', '').strip()
             # Read field list
-            self._field_list = [field for field in f['step_0000'].keys() if field not in ['r', 'dr']]
+            self._field_list = [field for field in f['plt_0000'].keys() if field not in ['r', 'dr']]
             # Read real scalars
             raw_data = f['real scalars'][()]
             self._real_scalars = {k.decode('ascii').strip(): v for k,v in raw_data}
@@ -705,11 +707,11 @@ class AMRTimeSeries1D(TimeSeries1D):
             raw_data = f['string scalars'][()]
             self._str_scalars = {k.decode('ascii').strip(): v.decode('ascii').strip() for k,v in raw_data}
 
-            self._times = f['t'][()]
+            self._times = f['time'][()]
 
             # Read time series
             for i in range(len(self._times)):
-                grp = f[f'step_{i:>04}']
+                grp = f[f'plt_{i:>04}']
                 data_vars = {}
                 coords = {}
                 attrs = {k: v for k,v in grp.attrs.items()}
@@ -816,7 +818,7 @@ class UniformTimeSeries1D(TimeSeries1D):
         field_list: Union[str, List[str]] = 'all'
     ) -> UniformTimeSeries1D:
         obj = cls()
-        r = np.asarray(r, dtype=np.float32)
+        r = np.atleast_1d(np.asarray(r, dtype=np.float32))
 
         # Sanitise field list
         if field_list == 'all':
@@ -828,7 +830,12 @@ class UniformTimeSeries1D(TimeSeries1D):
         times = series._times.copy()
         # Reserve storage
         data = {field: np.zeros((len(times), len(r)), dtype=np.float32) for field in field_list}
-        data['dr'] = get_midcell_dr(r)
+
+        if len(r) > 1:
+            data['dr'] = get_midcell_dr(r)
+        else:
+            data['dr'] = np.atleast_1d([0.0])
+
         for i in range(len(series)):
             xds = series._data[i]
             r_amr = xds.coords['r'].to_numpy()
@@ -858,7 +865,7 @@ class UniformTimeSeries1D(TimeSeries1D):
         field_list: Union[str, List[str]] = 'all'
     ) -> UniformTimeSeries1D:
         obj = cls()
-        r = np.asarray(r, dtype=np.float32)
+        r = np.atleast_1d(np.asarray(r, dtype=np.float32))
 
         # Sanitise field list
         if field_list == 'all':
@@ -868,7 +875,10 @@ class UniformTimeSeries1D(TimeSeries1D):
             field_list = [field for field in list(set(field_list)) if field in series._field_list]
 
         obj._data = series._data.interp(r=r, method='linear', assume_sorted=True)[field_list]
-        obj._data['dr'] = ('r', get_midcell_dr(r))
+        if len(r) > 1:
+            obj._data['dr'] = ('r', get_midcell_dr(r))
+        else:
+            obj._data['dr'] = ('r', np.atleast_1d([0.0]))
 
         obj._source_file = series._source_file
         obj._times = series._times.copy()
@@ -942,12 +952,12 @@ class UniformTimeSeries1D(TimeSeries1D):
             # Save time series grid type
             f.attrs['type'] = 'uniform'
 
-            f.create_dataset('t', data=self._data.coords['t'].to_numpy(), compression=None)
+            f.create_dataset('time', data=self._data.coords['t'].to_numpy(), compression=None)
             f.create_dataset('r', data=self._data.coords['r'].to_numpy(), compression=None)
             f.create_dataset('dr', data=self._data['dr'].to_numpy(), compression=None)
 
             for i in range(len(self._data.coords['t'])):
-                grp = f.create_group(f'step_{i:>04}')
+                grp = f.create_group(f'plt_{i:>04}')
 
                 for attr in self._data.attrs:
                     grp.attrs[attr] = self._data.attrs[attr][i]
@@ -972,7 +982,7 @@ class UniformTimeSeries1D(TimeSeries1D):
             # Read source path for caching
             self._source_file = f.attrs.get('source path', '').strip()
             # Read field list
-            self._field_list = [field for field in f['step_0000'].keys() if field not in ['r', 'dr']]
+            self._field_list = [field for field in f['plt_0000'].keys() if field not in ['r', 'dr']]
             # Read real scalars
             raw_data = f['real scalars'][()]
             self._real_scalars = {k.decode('ascii').strip(): v for k,v in raw_data}
@@ -980,7 +990,7 @@ class UniformTimeSeries1D(TimeSeries1D):
             raw_data = f['string scalars'][()]
             self._str_scalars = {k.decode('ascii').strip(): v.decode('ascii').strip() for k,v in raw_data}
 
-            self._times = f['t'][()]
+            self._times = f['time'][()]
             r = f['r'][()]
             dr = f['dr'][()]
 
@@ -988,7 +998,7 @@ class UniformTimeSeries1D(TimeSeries1D):
             data = {field: np.zeros((len(self._times), len(r)), dtype=np.float32) for field in self._field_list}
             coords = {'t': self._times, 'r': r}
             for i in range(len(self._times)):
-                grp = f[f'step_{i:>04}']
+                grp = f[f'plt_{i:>04}']
                 # Sanity check
                 if abs(self._times[i] - grp.attrs.get('time')) > 1e-6:
                     print(f'Warning: step {i} in file {file} may be incorrectly ordered')
@@ -1046,7 +1056,7 @@ class TimeSeriesView1D(object):
         self._field_list = field_list
 
     def __contains__(self, key: str) -> bool:
-        return (key in self._field_list) or (key in ['t'])
+        return (key in self._field_list) or (key in ['t', 'time'])
 
     def __getitem__(self, key):
         if isinstance(key, str):
@@ -1058,7 +1068,7 @@ class TimeSeriesView1D(object):
                         return self._series._data[key].to_numpy()
                 else:
                     return TimeSeriesView1D(self._series, key)
-            elif key == 't':
+            elif key in ['t', 'time']:
                 return self._series.times
             else:
                 raise IndexError(f'Key not in dataset: {key}')

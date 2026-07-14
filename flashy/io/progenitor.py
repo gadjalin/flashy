@@ -5,6 +5,8 @@ from typing import List, Callable, Optional, Union
 import numpy as np
 import re
 
+from ..constants import R_SUN
+
 
 class Progenitor(object):
     """
@@ -133,16 +135,16 @@ class Progenitor(object):
         if self._loaded:
             source = self._source_file
             n_fields = len(self._data.dtype.names)
-            n_cells = len(self._data['r'])
+            n_zones = len(self._data['r'])
             if self._comment:
-                return f'Progenitor @ {source}; {self._comment}; {n_fields} fields, {n_cells} cells'
+                return f'Progenitor @ {source}; {self._comment}; {n_fields} fields, {n_zones} zones'
             else:
-                return f'Progenitor @ {source}; {n_fields} fields, {n_cells} cells'
+                return f'Progenitor @ {source}; {n_fields} fields, {n_zones} zones'
         else:
             return f'Empty Progenitor'
 
     def __len__(self) -> int:
-        return self.size
+        return self.zone_count
 
     def __contains__(self, key: str) -> bool:
         self.__checkloaded()
@@ -160,9 +162,9 @@ class Progenitor(object):
         return self._data.dtype.names
 
     @property
-    def size(self) -> int:
+    def zone_count(self) -> int:
         """
-        Get the number of cells in the progenitor.
+        Get the number of zones in the progenitor.
         """
         self.__checkloaded()
         return len(self._data['r'])
@@ -290,7 +292,7 @@ class Progenitor(object):
             for field in field_list:
                 print(field, file=f)
 
-            for i in range(self.size):
+            for i in range(self.zone_count):
                 print(*([self._data['r'][i]] + [self._data[field][i] for field in field_list]), file=f)
 
         self._source_file = file
@@ -370,16 +372,19 @@ def mesa_parser(file):
         encoding='ascii'
     )
 
-    # Reorder cells from core to surface
+    # Reorder zones from core to surface
     for name in data.dtype.names:
         data[name] = np.flip(data[name])
 
-    # TODO Store constants somewhere generic
-    Rsun = 6.957e10
-    return comment, data['rmid']*Rsun, data
+    # MESA gives the outer radius of the shells
+    r_outer = data['radius']*R_SUN
+    radius = np.zeros_like(r_outer)
+    radius[0] = 0.5*r_outer[0]
+    radius[1:] = 0.5*(r_outer[1:] + r_outer[:-1])
+
+    return comment, radius, data
 
 
-# TODO Update to new interface
 def kepler_parser(file):
     """
     Tested with kepler progenitor files format from Woosley & Heger 2002 and Sukhbold 2018
@@ -387,22 +392,14 @@ def kepler_parser(file):
     """
     comment = ''
 
-    skip = 2
+    skip = 0
     with open(file) as f:
         line = f.readline()
-        while line.strip() == '':
+        while not line.strip().startswith('grid'):
             line = f.readline()
             skip += 1
-        comment = f.readline()
-        line = f.readline()
-        while line.strip() == '':
-            line = f.readline()
-            skip += 1
-        kepler_header = re.split(r'\s{2,}', line)
-        if kepler_header[0] == '':
-            kepler_header = kepler_header[1:]
-        if kepler_header[-1] == '':
-            kepler_header = kepler_header[:-1]
+        kepler_header = re.split(r'\s{2,}', line.strip())
+        skip += 1
         while f.readline().strip() == '':
             skip += 1
 
@@ -411,7 +408,7 @@ def kepler_parser(file):
     raw_data = np.genfromtxt(
             fname=file,
             skip_header=skip,
-            dtype=None,
+            dtype=np.float64,
             missing_values='---',
             filling_values=0.0,
             names=kepler_header,
@@ -423,12 +420,18 @@ def kepler_parser(file):
     dtypes = [(field, np.float64) for field in ['r'] + list(raw_data.dtype.names)]
     data = np.zeros(len(raw_data), dtype=dtypes)
 
-    data['r'] = raw_data['radius']
+    if 'radius' in raw_data.dtype.names:
+        data['r'] = raw_data['radius']
+    elif 'cell_outer_radius' in raw_data.dtype.names:
+        data['r'] = raw_data['cell_outer_radius']
+    else:
+        raise RuntimeError('No radius field found')
+
     for field in raw_data.dtype.names:
         data[field] = raw_data[field]
 
     # mass is cell mass
-    data['mass'] = np.cumsum(data['mass'])
+    #data['mass'] = np.cumsum(data['mass'])
 
     return comment, data['r'], data
 

@@ -1,26 +1,16 @@
+# For type hints
+from __future__ import annotations
+from typing import List, Dict, Optional, Union, Tuple
+
 import numpy as np
-from .winvn_database import WinvnDatabase, _WINVN_TEMP_GRID
-from .nucleus import sort_isotope_id
+
+from .winvn_database import WinvnDatabase, WinvnNucleus, _WINVN_TEMP_GRID
+from ..constants import K_MEV
 
 
 _winvn_database = None
 
-# TODO Move constants someplace generic
-MP = 938.272046 # Proton mass MeV/c2
-ME = 0.5110     # Electron mass MeV/c2
-MN = 939.565379 # Neutron mass MeV/c2
-AMU = 931.494061# Atomic mass unit MeV/c2
-PEXC = (MP + ME - AMU) # Proton mass excess
-NEXC = (MN - AMU)      # Neutron mass excess
-CLIGHT = 2.99792458e10 # Speed of light cm/s
-AVO = 6.0221367e23 # Avogadro number
-H = 6.6260755e-27 # Planck constant erg.s
-H_EV = 4.135667696e-15 # Planck constant eV.s
-K_ERG = 1.380658e-16 # Boltzmann constant erg/K
-K_EV = 8.6173e-5 # Boltzmann constant eV/K
-K_MEV = K_EV*1e-6 # Boltzmann constant MeV/K
 SQRT2 = np.sqrt(2.0)
-
 _SAHA_CONST = 3.2047203586e3 # This is what you get after reducing all constants in saha
 
 _NSE_MAX_NEWTON = 10000
@@ -28,51 +18,57 @@ _NSE_TOL = 1e-5
 _NSE_SMALL = 1e-10
 
 
-class NSE(object):
-    _network_names: list
-    _network: list
+class NSESolver(object):
+    _nuclei_names: List[str]
+    _nuclei: List[WinvnNucleus]
 
     _Yi: np.ndarray
     _Yp: float
     _Yn: float
 
-    _As: np.ndarray
-    _Zs: np.ndarray
-    _Ns: np.ndarray
-    _Bs: np.ndarray
-    _PFs: np.ndarray
+    _Ai: np.ndarray
+    _Zi: np.ndarray
+    _Ni: np.ndarray
+    _Bi: np.ndarray
+    _spini: np.ndarray
+    _PFi: np.ndarray
+    _Gi: np.ndarray
+
     _ln_consts: np.ndarray
     _ln_dists: np.ndarray
     _ln_saha_factors: np.ndarray
-    
-    def __init__(self, nuclide_names=None):
+
+    def __init__(self, network: Optional[List[str]] = None):
         global _winvn_database
 
         if _winvn_database is None:
             _winvn_database = WinvnDatabase()
 
         # Setup network
-        if nuclide_names is not None:
-            self._network_names = self._sanitiseLabels(nuclide_names)
+        if network is not None:
+            if len(network) == 0:
+                raise ValueError('Network must not be empty')
+
+            network = self._sortNetwork(network)
         else:
-            self._network_names = _winvn_database.names()
+            network = _winvn_database.species
 
-        self._network = [_winvn_database.get_nuclide(name) for name in self._network_names]
+        self._nuclei = [_winvn_database[sp] for sp in network]
 
-        self._As    = np.atleast_1d([nuc.get_A()              for nuc in self._network])
-        self._Zs    = np.atleast_1d([nuc.get_Z()              for nuc in self._network])
-        self._Ns    = np.atleast_1d([nuc.get_N()              for nuc in self._network])
-        self._Bs    = np.atleast_1d([nuc.get_binding_energy() for nuc in self._network])
-        self._spins = np.atleast_1d([(2.*nuc.get_spin()+1)    for nuc in self._network])
-        self._PFs   = np.atleast_1d([nuc.get_pf()             for nuc in self._network])
-        self._Gs    = np.ones(len(self._network))
+        self._Ai    = np.atleast_1d([nuc.A           for nuc in self._nuclei])
+        self._Zi    = np.atleast_1d([nuc.Z           for nuc in self._nuclei])
+        self._Ni    = np.atleast_1d([nuc.N           for nuc in self._nuclei])
+        self._Bi    = np.atleast_1d([nuc.B           for nuc in self._nuclei])
+        self._spini = np.atleast_1d([(2.*nuc.spin+1) for nuc in self._nuclei])
+        self._PFi   = np.atleast_1d([nuc.pf          for nuc in self._nuclei])
+        self._Gi    = np.ones(len(self._nuclei))
 
         self._Yn = 0.5
         self._Yp = 0.5
 
     def solve(self, dens, temp, Ye, reset_solver=False):
         # Set initial conditions
-        self._Yi = np.zeros(len(self._network))
+        self._Yi = np.zeros(len(self._nuclei))
         if reset_solver or self._Yn == 0.5:
             self._Yn = 1.0 - Ye
             self._Yp = Ye
@@ -86,93 +82,123 @@ class NSE(object):
         # Calculate final abundances
         self._saha()
 
-    def get_Yi(self):
-        return self._Yi.copy()
+    @property
+    def Ai(self) -> np.ndarray:
+        return self._Ai
 
-    def get_Yn(self):
+    @property
+    def Zi(self) -> np.ndarray:
+        return self._Zi
+
+    @property
+    def Ni(self) -> np.ndarray:
+        return self._Ni
+
+    @property
+    def Yi(self) -> np.ndarray:
+        return self._Yi
+
+    @property
+    def Yn(self) -> float:
         return self._Yn
 
-    def get_Yp(self):
+    @property
+    def Yp(self) -> float:
         return self._Yp
 
-    def get_Yalpha(self):
-        return self._Yi[self._network_names.index('he4')]
+    @property
+    def Yalpha(self) -> float:
+        return self._Yi[self._nuclei_names.index('he4')]
 
-    def get_Yheavy(self):
-        heavyStart = self._network_names.index('he4') + 1
-        if heavyStart >= len(self._network_names):
-            return 0.0
-        else:
-            return np.sum(self._Yi[heavyStart:])
+    @property
+    def Yheavy(self) -> float:
+        heavyi = self._nuclei_names.index('he4') + 1
+        return np.sum(self._Yi[heavyi:])
 
-    def get_Xi(self):
-        return self.get_Yi()*self._As
+    @property
+    def Xi(self) -> np.ndarray:
+        return self.Yi*self.Ai
 
-    def get_Xn(self):
-        return self.get_Yn()
+    @property
+    def Xn(self) -> float:
+        return self.Yn
 
-    def get_Xp(self):
-        return self.get_Yp()
+    @property
+    def Xp(self) -> float:
+        return self.Yp
 
-    def get_Xalpha(self):
-        return self.get_Yalpha()*4.0
+    @property
+    def Xalpha(self) -> float:
+        return self.Yalpha*4.0
 
-    def get_Xheavy(self):
-        heavyStart = self._network_names.index('he4') + 1
-        if heavyStart >= len(self._network_names):
-            return 0.0
-        else:
-            return np.sum(self._Yi[heavyStart:]*self._As[heavyStart:])
+    @property
+    def Xheavy(self) -> float:
+        heavyi = self._nuclei_names.index('he4') + 1
+        return np.sum(self._Yi[heavyi:]*self._Ai[heavyi:])
 
-    def get_Abar(self):
+    @property
+    def Abar(self) -> float:
         return 1./np.sum(self._Yi)
 
-    def get_Zbar(self):
-        return np.sum(self._Yi*self._Zs)/np.sum(self._Yi)
+    @property
+    def Zbar(self) -> float:
+        return np.sum(self._Yi*self._Zi)/np.sum(self._Yi)
 
-    def get_AbarHeavy(self):
-        heavyStart = self._network_names.index('he4') + 1
-        if heavyStart >= len(self._network_names):
-            return 0.0
-        else:
-            return np.sum(self._Yi[heavyStart:]*self._As[heavyStart:])/np.sum(self._Yi[heavyStart:])
+    @property
+    def Aheavy(self) -> float:
+        heavyi = self._nuclei_names.index('he4') + 1
+        return np.sum(self._Yi[heavyi:]*self._Ai[heavyi:])/np.sum(self._Yi[heavyi:])
 
-    def get_ZbarHeavy(self):
-        heavyStart = self._network_names.index('he4') + 1
-        if heavyStart >= len(self._network_names):
-            return 0.0
-        else:
-            return np.sum(self._Yi[heavyStart:]*self._Zs[heavyStart:])/np.sum(self._Yi[heavyStart:])
+    @property
+    def Zheavy(self) -> float:
+        heavyi = self._nuclei_names.index('he4') + 1
+        return np.sum(self._Yi[heavyi:]*self._Zi[heavyi:])/np.sum(self._Yi[heavyi:])
+
+    @property
+    def finab(self) -> np.ndarray:
+        return np.array([(A, Z, X) for A,Z,X in zip(self.Ai, self.Zi, self.Xi)], dtype=[(x, float) for x in ['A', 'Z', 'X']])
+
+    @property
+    def finabA(self) -> np.ndarray:
+        As, iAs = np.unique(self._Ai, return_inverse=True)
+        Xs = np.bincount(iAs, weights=self._Yi*self._Ai)
+        return np.array([(A, X) for A,X in zip(As, Xs)], dtype=[(x, float) for x in ['A', 'X']])
+
+    @property
+    def finabZ(self) -> np.ndarray:
+        Zs, iZs = np.unique(self._Zi, return_inverse=True)
+        Xs = np.bincount(iZs, weights=self._Yi*self._Ai)
+        return np.array([(Z, X) for Z,X in zip(Zs, Xs)], dtype=[(x, float) for x in ['Z', 'X']])
 
     def _init_solver(self, dens, temp):
         t9 = temp*1e-9
 
         if (t9 <= _WINVN_TEMP_GRID[0]):
-            self._Gs = self._spins * self._PFs[:,0]
+            self._Gi = self._spini * self._PFi[:,0]
         elif (t9 >= _WINVN_TEMP_GRID[-1]):
-            self._Gs = self._spins * self._PFs[:,-1]
+            self._Gi = self._spini * self._PFi[:,-1]
         else:
             t9i = np.searchsorted(_WINVN_TEMP_GRID, t9)
-        
+
             t9left, t9right = _WINVN_TEMP_GRID[t9i-1], _WINVN_TEMP_GRID[t9i]
-            pfleft, pfright = self._PFs[:,t9i-1], self._PFs[:,t9i]
-        
+            pfleft, pfright = self._PFi[:,t9i-1], self._PFi[:,t9i]
+
             slope = (pfright - pfleft) / (t9right - t9left)
-            self._Gs = self._spins * (slope*t9 - slope*t9right + pfright)
+            self._Gi = self._spini * (slope*t9 - slope*t9right + pfright)
 
-        self._ln_consts = (self._As - 1)*np.log(_SAHA_CONST * dens * temp**(-3./2.)) \
-                         + 1.5*np.log(self._As) \
-                         - self._As*np.log(2)
-        self._ln_dists  = self._Bs/(K_MEV*temp)
+        self._ln_consts = (self._Ai - 1)*np.log(_SAHA_CONST * dens * temp**(-3./2.)) \
+                         + 1.5*np.log(self._Ai) \
+                         - self._Ai*np.log(2)
+        self._ln_dists  = self._Bi/(K_MEV*temp)
 
-        self._ln_saha_factors = np.log(self._Gs) + self._ln_dists + self._ln_consts
+        self._ln_saha_factors = np.log(self._Gi) + self._ln_dists + self._ln_consts
 
     def _saha(self):
         # Calculate abundances
         self._Yi[0] = self._Yn
         self._Yi[1] = self._Yp
         # Prevent large numbers
-        self._Yi[2:] = np.exp(self._ln_saha_factors[2:] + self._Ns[2:]*np.log(self._Yn) + self._Zs[2:]*np.log(self._Yp))
+        self._Yi[2:] = np.exp(self._ln_saha_factors[2:] + self._Ni[2:]*np.log(self._Yn) + self._Zi[2:]*np.log(self._Yp))
         # This slows down A LOT
         #for i in range(2, len(self._Yi)):
         #    if ln_saha[i] < -80.0:
@@ -188,7 +214,7 @@ class NSE(object):
             self._saha()
             
             # Mass conservation
-            m = 1.0 - np.sum(self._Yi*self._As)
+            m = 1.0 - np.sum(self._Yi*self._Ai)
             # Prevent insane values
             if (np.log2(abs(m)) > 33.0):
                 if (Ye > 0.4):
@@ -199,13 +225,13 @@ class NSE(object):
                     continue
 
             # Charge conservation
-            c = Ye - np.sum(self._Yi*self._Zs)
+            c = Ye - np.sum(self._Yi*self._Zi)
 
             # Calculate derivatives and solve Jacobian
-            dmdYn = np.sum(self._Yi[2:]*self._As[2:]*self._Ns[2:])/self._Yn + 1.0
-            dmdYp = np.sum(self._Yi[2:]*self._As[2:]*self._Zs[2:])/self._Yp + 1.0
-            dcdYn = np.sum(self._Yi[2:]*self._Zs[2:]*self._Ns[2:])/self._Yn
-            dcdYp = np.sum(self._Yi[2:]*self._Zs[2:]*self._Zs[2:])/self._Yp + 1.0
+            dmdYn = np.sum(self._Yi[2:]*self._Ai[2:]*self._Ni[2:])/self._Yn + 1.0
+            dmdYp = np.sum(self._Yi[2:]*self._Ai[2:]*self._Zi[2:])/self._Yp + 1.0
+            dcdYn = np.sum(self._Yi[2:]*self._Zi[2:]*self._Ni[2:])/self._Yn
+            dcdYp = np.sum(self._Yi[2:]*self._Zi[2:]*self._Zi[2:])/self._Yp + 1.0
 
             detJ = dmdYn*dcdYp - dcdYn*dmdYp
             delYn = 1./detJ * (dcdYp*m - dmdYp*c)
@@ -223,27 +249,28 @@ class NSE(object):
         else:
             raise RuntimeError(f'NSE did not converge rho={dens} temp={temp} ye={Ye}')
 
-        #print(i)
+    def _sortNetwork(self, network: List[str]):
+        if 'neut' in network:
+            network[network.index('neut')] = 'n'
+        if 'prot' in network:
+            network[network.index('prot')] = 'p'
+        if 'h1' in network:
+            network[network.index('h1')] = 'p'
+        if 'h2' in network:
+            network[network.index('h2')] = 'd'
+        if 'h3' in network:
+            network[network.index('h3')] = 't'
 
-    def _sanitiseLabels(self, labels):
-        if 'neut' in labels:
-            labels[labels.index('neut')] = 'n'
-        if 'h1' in labels:
-            labels[labels.index('h1')] = 'p'
-        if 'h2' in labels:
-            labels[labels.index('h2')] = 'd'
-        if 'h3' in labels:
-            labels[labels.index('h3')] = 't'
+        if 'p' not in network:
+            network = ['p'] + network
+        if 'n' not in network:
+            network = ['n'] + network
 
-        if 'n' in labels:
-            labels.remove('n')
-        if 'p' in labels:
-            labels.remove('p')
+        network.sort(key=lambda x: (self._winvn_database[x].Z, self._winvn_database[x].A))
 
-        labels.sort(key=sort_isotope_id)
+        for sp in network:
+            if not _winvn_database.contains(sp):
+                raise RuntimeError(f'Invalid species: {sp}')
 
-        for label in labels:
-            if not _winvn_database.contains(label):
-                raise RuntimeError(f'Invalid nuclide {label}')
-        
-        return ['n', 'p'] + labels
+        return network
+

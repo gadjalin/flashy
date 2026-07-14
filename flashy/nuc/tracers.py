@@ -10,8 +10,9 @@ from pathlib import Path
 import h5py
 
 from ..io import Progenitor, DatFile, TimeSeries1D
-from ..analysis import get_bounce_time
+from ..post import get_bounce_time
 from ..nuc import find_isotope, Nucleus
+from ..eos import EosTable, EOS_MODE
 
 
 _REQUIRED_FIELDS = ['dens', 'temp', 'entr', 'ye', 'fnue', 'fnua', 'fnux', 'enue', 'enua', 'enux']
@@ -147,6 +148,7 @@ class Tracers1D(object):
         series: TimeSeries1D,
         dat: Union[DatFile, str],
         n_shells: int,
+        ratio: float = 0.75,
         r_start: Optional[float] = None,
         t_start: Optional[float] = None
     ) -> np.ndarray:
@@ -160,7 +162,7 @@ class Tracers1D(object):
             r_start = float(dat[0][t_start]['max shock radius'])
 
         # Times where to find mass shells crossing r_start
-        ts = np.linspace(t_start, series.times[-1], int(np.ceil(n_shells*3/4)))
+        ts = np.linspace(t_start, series.times[-1], int(np.ceil(n_shells*ratio)))
         mass_shells = []
 
         # Look at every time which mass shell crosses radius at r_start
@@ -173,8 +175,8 @@ class Tracers1D(object):
         # Radii where to find mass shells crossing shock
         data = series._data[-1]
         r_min = np.interp(np.max(shells_const_radius), data['mass'], data['r'])
-        r_max = dat[0]['max shock radius'][-1]
-        rs = np.linspace(r_min, r_max, int(np.floor(n_shells*1/4)) + 2)
+        r_max = dat[0][series.times[-1]]['max shock radius']
+        rs = np.linspace(r_min, r_max, int(np.floor(n_shells*(1.0 - ratio))) + 2)
         mass_shells = []
 
         # Look at last time step which mass shells are behind the shock and
@@ -237,7 +239,8 @@ class Tracers1D(object):
     @staticmethod
     def calculate_trajectories(
         series: TimeSeries1D,
-        masses: np.ndarray
+        masses: np.ndarray,
+        eos: Optional[EosTable] = None
     ) -> xr.Dataset:
         # We start from the end of the simulation
         # And save data for every tracers
@@ -257,6 +260,21 @@ class Tracers1D(object):
             all_data = all_data.reset_coords('r')
             all_data = all_data.rename({'mass':'tracer'})
             all_data.coords['tracer'] = masses
+
+            if eos is not None:
+                xrho = all_data['dens'].to_numpy()
+                xtemp = np.full_like(xrho, eos.minimum_temperature, dtype=np.float64)
+                xye = all_data['ye'].to_numpy()
+
+                coldenergydensity = eos.nuc_eos_zone(EOS_MODE.DENS_TEMP, xrho, xtemp, xye)['logenergy']
+
+                coldenergy = (10**(coldenergydensity) - eos.energy_shift)
+                dener = data.interp(r=rs)['ener'].to_numpy() - eos.energy_shift
+                dgrav = data.interp(r=rs)['gpot'].to_numpy()
+                velr = data.interp(r=rs)['velx'].to_numpy()
+
+                ejected = ((dener + dgrav - coldenergy) > 0.0) & (velr > 0.0)
+                all_data = all_data.assign(ejected=('tracer', np.float64(ejected)))
 
             # Append to data list
             all_data = all_data.assign_coords(time=t)
@@ -283,7 +301,10 @@ class Tracers1D(object):
     ) -> None:
         # Save data for every tracer until that tracer crosses
         # the threshold temperature Tmax
-        header = 't [s]           T [GK]           rho[g/cm^3]      r [km]           Ye               lnue [erg/s]     lanue [erg/s]    lnux [erg/s]     lanux [erg/s]    tnue [MeV]      tanue [MeV]      tnux [Mev]        tanux [Mev]     entr [k_B/baryon]\n----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'
+        names = ['t [s]', 'T [GK]', 'rho[g/cm^3]', 'r [km]', 'Ye',
+                 'lnue [erg/s]', 'lanue [erg/s]', 'lnux [erg/s]', 'lanux [erg/s]',
+                 'tnue [MeV]', 'tanue [MeV]', 'tnux [Mev]', 'tanux [Mev]',
+                 'entr [k_B/baryon]']
 
         for i in tqdm(range(len(trajectories.coords['tracer'].to_numpy())), bar_format=_TQDM_FORMAT):
             # Get tracer data
@@ -296,9 +317,14 @@ class Tracers1D(object):
             cut_data = data.sel(time=slice(cut_time, None))
 
             # Format data to save
+            header = ''.join([name.ljust(17) for name in names])
             save_data = np.column_stack((cut_data.time, cut_data.temp/1e9, cut_data.dens, cut_data.r/1e5, cut_data.ye,
                                          cut_data.lnue*1e51, cut_data.lnua*1e51, cut_data.lnux*0.5e51, cut_data.lnux*0.5e51,
                                          cut_data.tnue, cut_data.tnua, cut_data.tnux, cut_data.tnux, cut_data.entr))
+            if 'ejected' in cut_data:
+                header += 'ejected'.ljust(17)
+                save_data = np.column_stack((save_data, cut_data.ejected))
+
             save_file = tracer_dir + f'/tracer_{i:>04}.dat'
             np.savetxt(save_file, save_data, fmt=' %.6e   ', header=header)
 

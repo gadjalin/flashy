@@ -1,12 +1,13 @@
 from typing import Optional, Union
 
-from .label_descriptor import LabelDescriptor
+from .label_descriptor import LabelDescriptor, _DEFAULT_DESCRIPTORS
 from .label_registry import LabelRegistry
-from .label_defaults import _DEFAULT_DESCRIPTORS
+
 
 _REGISTRY = LabelRegistry()
 for desc in _DEFAULT_DESCRIPTORS:
     _REGISTRY.register(desc)
+
 
 def get_label(
     key: str,
@@ -48,6 +49,16 @@ def get_label(
         as matplotlib axis label.
     """
     return _REGISTRY.get_label(key, units, scale, scale_style, unit_style, name_style)
+
+
+def make_label(
+    name: str,
+    unit_str: Optional[str] = None,
+    scale: Optional[Union[int, float, str]] = None,
+    scale_style: str = 'auto',
+    unit_style: str = 'brackets',
+) -> str:
+    return _REGISTRY.make_label(name, unit_str, scale, scale_style, unit_style)
 
 
 def get_plot_scale(key: str) -> str:

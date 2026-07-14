@@ -78,7 +78,7 @@ class LabelRegistry(object):
         if unit_style != 'none' and unit_style not in _UNIT_SURROUND:
             raise ValueError(f'Invalid unit style: {unit_style}')
 
-        if unit_style != 'none':
+        if unit_style != 'none' and unit_style is not None:
             # Resolve unit system
             unit_str = self._resolve_unit_format(descriptor, units)
 
@@ -88,7 +88,7 @@ class LabelRegistry(object):
             # Format units with scale factor
             unit_full = ''
             if scale_str:
-                unit_full = f'{scale_str}\ {unit_str}' if unit_str else scale_str
+                unit_full = fr'{scale_str}\ {unit_str}' if unit_str else scale_str
             else:
                 unit_full = unit_str
         else:
@@ -97,7 +97,42 @@ class LabelRegistry(object):
         if unit_full:
             unit_open = _UNIT_SURROUND[unit_style][0]
             unit_close = _UNIT_SURROUND[unit_style][1]
-            label = f'{name} {unit_open}${unit_full}${unit_close}'
+            label = fr'{name} {unit_open}${unit_full}${unit_close}'
+        else:
+            label = name
+
+        return label
+
+    def make_label(
+        self,
+        name: str,
+        unit_str: Optional[str] = None,
+        scale: Optional[Union[int, float, str]] = None,
+        scale_style: str = 'auto',
+        unit_style: str = 'brackets',
+    ) -> str:
+
+        # Check unit style
+        if unit_style != 'none' and unit_style not in _UNIT_SURROUND:
+            raise ValueError(f'Invalid unit style: {unit_style}')
+
+        if unit_style != 'none' and unit_style is not None:
+            # Format scale factor
+            scale_str = self._resolve_scale_format(scale, scale_style)
+
+            # Format units with scale factor
+            unit_full = ''
+            if scale_str:
+                unit_full = fr'{scale_str}\ {unit_str}' if unit_str else scale_str
+            else:
+                unit_full = unit_str
+        else:
+            unit_full = ''
+
+        if unit_full:
+            unit_open = _UNIT_SURROUND[unit_style][0]
+            unit_close = _UNIT_SURROUND[unit_style][1]
+            label = fr'{name} {unit_open}${unit_full}${unit_close}'
         else:
             label = name
 
@@ -145,13 +180,15 @@ class LabelRegistry(object):
             elif style == 'linear':
                 return fr'\times{scale}' if not scale.is_integer() else fr'\times{int(scale)}'
             elif style == 'auto':
-                is_exact_log10 = math.isclose(log10, round(log10), rel_tol=1e-9)
+                is_exact_log10 = math.isclose(log10, round(log10), rel_tol=1e-4)
                 if is_exact_log10 and not math.isclose(scale, 10.0):
-                    return f'10^{{{int(round(log10))}}}'
+                    res = f'10^{{{int(round(log10))}}}'
                 elif abs(scale) > 1e3 or abs(scale) < 1e-3:
-                    return f'10^{{{log10:.{precision}g}}}'
+                    res = f'10^{{{log10:.{precision}g}}}'
                 else:
                     return fr'\times{scale}' if not scale.is_integer() else fr'\times{int(scale)}'
+
+                return fr'\times{res}' if scale > 0.0 else fr'\times -{res}'
             else:
                 raise ValueError(f'Invalid scale style: {style}')
         else:

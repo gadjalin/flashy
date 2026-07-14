@@ -4,11 +4,7 @@ import h5py
 from scipy.interpolate import RegularGridInterpolator
 from ._eos_var import EOS_VAR
 from ._eos_mode import EOS_MODE
-
-
-# TODO Move constants to generic place
-_KTOMEV = 8.617385687984878e-11
-_MEVTOERG = 1.60217733e-6
+from ..constants import KELVIN_TO_MEV
 
 
 class EosTable(h5py.File):
@@ -70,8 +66,8 @@ class EosTable(h5py.File):
         # Table bounds
         self._minRho = 10**np.min(self._logRho)
         self._maxRho = 10**np.max(self._logRho)
-        self._minTemp = 10**np.min(self._logTemp)/_KTOMEV
-        self._maxTemp = 10**np.max(self._logTemp)/_KTOMEV
+        self._minTemp = 10**np.min(self._logTemp)/KELVIN_TO_MEV
+        self._maxTemp = 10**np.max(self._logTemp)/KELVIN_TO_MEV
         self._minYe = np.min(self._Ye)
         self._maxYe = np.max(self._Ye)
 
@@ -97,6 +93,30 @@ class EosTable(h5py.File):
     @property
     def field_list(self) -> list[str]:
         return self._vars
+
+    @property
+    def minimum_density(self) -> float:
+        return self._minRho
+
+    @property
+    def minimum_temperature(self) -> float:
+        return self._minTemp
+
+    @property
+    def minimum_ye(self) -> float:
+        return self._minYe
+
+    @property
+    def maximum_density(self) -> float:
+        return self._maxRho
+
+    @property
+    def maximum_temperature(self) -> float:
+        return self._maxTemp
+
+    @property
+    def maximum_ye(self) -> float:
+        return self._maxYe
 
     def __call__(self, mode: EOS_MODE, eosData: list[float]):
         return self.eos_nuclear(mode, eosData)
@@ -152,7 +172,7 @@ class EosTable(h5py.File):
         zones = self.nuc_eos_zone(mode, self.xDens, self.xTemp, self.xYe, self.xEner, self.xPres)
 
         # Set appropriate variables
-        self.xTemp = 10**zones['logtemp']/_KTOMEV
+        self.xTemp = 10**zones['logtemp']/KELVIN_TO_MEV
         self.xPres = 10**zones['logpress']
         self.xEner = 10**zones['logenergy'] - self._energyShift
         self.xEntr = zones['entropy']
@@ -181,7 +201,7 @@ class EosTable(h5py.File):
 
         # Have rho, temp, ye
         logrho = np.log10(xrho)
-        logtemp = np.log10(np.asarray(xtemp) * _KTOMEV)
+        logtemp = np.log10(np.asarray(xtemp) * KELVIN_TO_MEV)
         ye = np.asarray(xye)
 
         # table interpolation
@@ -199,7 +219,7 @@ class EosTable(h5py.File):
 
     def nuc_eos_grid(self, xrho, xtemp, xye):
         logrho = np.log10(xrho)
-        logtemp = np.log10(np.asarray(xtemp) * _KTOMEV)
+        logtemp = np.log10(np.asarray(xtemp) * KELVIN_TO_MEV)
         ye = np.asarray(xye)
 
         YE, LOGTEMP, LOGRHO = np.meshgrid(ye, logtemp, logrho, indexing='ij')

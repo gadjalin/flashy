@@ -2,6 +2,9 @@ import numpy as np
 from itertools import groupby
 from scipy.ndimage import gaussian_filter1d, median_filter
 
+from ..eos import EosTable, EOS_MODE
+from ..constants import PI
+
 
 def get_bounce_time(log_file: str) -> float:
     """
@@ -22,6 +25,9 @@ def get_bounce_time(log_file: str) -> float:
             if 'Bounce!' in line:
                 line = line.strip()
                 return float(line.split()[1])
+            if 'Bounce time' in line:
+                line = line.strip()
+                return float(line.split()[-1])
     return None
 
 
@@ -53,7 +59,7 @@ def calculate_shell_mass(r, dr, dens):
     array-like
         The masses of individual mass shells.
     """
-    return (4./3.) * np.pi * ((r + dr*0.5)**3 - (r - dr*0.5)**3) * dens
+    return (4./3.) * PI * ((r + dr*0.5)**3 - (r - dr*0.5)**3) * dens
 
 
 # TODO give m in grams and do conversion here
@@ -130,4 +136,83 @@ def calculate_shock(time, shock_radius):
     # Then smooth back to legitimate trend
     shock_vel = gaussian_filter1d(shock_vel, sigma=5)
     return shock_times, shock_rad, shock_vel
+
+
+#def calculate_diagnostic_mask_1d(r, dr, dens, ye, velx, ener, gpot, eos) -> np.ndarray:
+#    xrho = np.asarray(dens, dtype=np.float64)
+#    xtemp = np.full_like(xrho, eos.minimum_temperature, dtype=np.float64)
+#    xye = np.asarray(ye, dtype=np.float64)
+#
+#    coldenergydensity = eos.nuc_eos_zone(EOS_MODE.DENS_TEMP, xrho, xtemp, xye)['logenergy']
+#
+#    xener = np.asarray(ener, dtype=np.float64)
+#    xgpot = np.asarray(gpot, dtype=np.float64)
+#    velr = np.asarray(velx, dtype=np.float64)
+#    vol = np.asarray((4./3.)*PI*((r + dr/2.)**3 - (r - dr/2.)**3), dtype=np.float64)
+#
+#    coldenergy = (10**(coldenergydensity) - eos.energy_shift)*dens*vol
+#    dener = (xener - eos.energy_shift)*dens*vol
+#    dgrav = xgpot*dens*vol
+#    detot = dener + dgrav - coldenergy
+#    return (detot > 0.0) & (velr > 0.0)
+
+
+#def calculate_explosion_energy_1d(r, dr, dens, temp, ye, velx, ener, gpot, eos) -> float:
+#    xrho = np.asarray(dens, dtype=np.float64)
+#    xtemp = np.full_like(xrho, eos.minimum_temperature, dtype=np.float64)
+#    xye = np.asarray(ye, dtype=np.float64)
+#
+#    coldenergydensity = eos.nuc_eos_zone(EOS_MODE.DENS_TEMP, xrho, xtemp, xye)['logenergy']
+#
+#    xener = np.asarray(ener, dtype=np.float64)
+#    xgpot = np.asarray(gpot, dtype=np.float64)
+#    velr = np.asarray(velx, dtype=np.float64)
+#    vol = np.asarray((4./3.)*PI*((r + dr/2.)**3 - (r - dr/2.)**3), dtype=np.float64)
+#
+#    coldenergy = (10**(coldenergydensity) - eos.energy_shift)*dens*vol
+#    dener = (xener - eos.energy_shift)*dens*vol
+#    dgrav = xgpot*dens*vol
+#    detot = dener + dgrav - coldenergy
+#    mask = (detot > 0.0) & (velr > 0.0)
+#    return np.sum(detot[mask])
+
+
+def calculate_diagnostic_mask_1d(data, eos) -> np.ndarray:
+    xrho = np.asarray(data['dens'], dtype=np.float64)
+    xtemp = np.full_like(xrho, eos.minimum_temperature, dtype=np.float64)
+    xye = np.asarray(data['ye'], dtype=np.float64)
+
+    coldenergydensity = eos.nuc_eos_zone(EOS_MODE.DENS_TEMP, xrho, xtemp, xye)['logenergy']
+
+    xener = np.asarray(data['ener'], dtype=np.float64)
+    xgpot = np.asarray(data['gpot'], dtype=np.float64)
+    velr = np.asarray(data['velx'], dtype=np.float64)
+
+    coldenergy = (10**(coldenergydensity) - eos.energy_shift)
+    dener = (xener - eos.energy_shift)
+    dgrav = xgpot
+    detot = dener + dgrav - coldenergy
+    return (detot > 0.0) & (velr > 0.0)
+
+
+def calculate_explosion_energy_1d(data, eos) -> float:
+    xrho = np.asarray(data['dens'], dtype=np.float64)
+    xtemp = np.full_like(xrho, eos.minimum_temperature, dtype=np.float64)
+    xye = np.asarray(data['ye'], dtype=np.float64)
+
+    coldenergydensity = eos.nuc_eos_zone(EOS_MODE.DENS_TEMP, xrho, xtemp, xye)['logenergy']
+
+    r = np.asarray(data['r'], dtype=np.float64)
+    dr = np.asarray(data['dr'], dtype=np.float64)
+    xener = np.asarray(data['ener'], dtype=np.float64)
+    xgpot = np.asarray(data['gpot'], dtype=np.float64)
+    velr = np.asarray(data['velx'], dtype=np.float64)
+    vol = np.asarray((4./3.)*PI*((r + dr/2.)**3 - (r - dr/2.)**3), dtype=np.float64)
+
+    coldenergy = (10**(coldenergydensity) - eos.energy_shift)*xrho*vol
+    dener = (xener - eos.energy_shift)*xrho*vol
+    dgrav = xgpot*xrho*vol
+    detot = dener + dgrav - coldenergy
+    mask = (detot > 0.0) & (velr > 0.0)
+    return np.sum(detot[mask])
 
