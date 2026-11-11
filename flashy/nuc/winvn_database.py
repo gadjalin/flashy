@@ -9,6 +9,7 @@ except ModuleNotFoundError:
     import importlib_resources as resources
 
 from ..constants import N_EXC, P_EXC
+from .._utils import readonly
 
 
 # Temperature grid in GK for the partition functions
@@ -40,9 +41,10 @@ class WinvnNucleus(object):
     def __post_init__(self):
         B = self.Z*P_EXC + self.N*N_EXC - self.mass_excess
         object.__setattr__(self, 'B', B)
+        object.__setattr__(self, 'pf', readonly(np.array(self.pf, dtype=np.float64)))
 
     def update_pf(self, new_pf) -> None:
-        object.__setattr__(self, 'pf', new_pf)
+        object.__setattr__(self, 'pf', readonly(np.array(new_pf, dtype=np.float64)))
 
     def eval_pf(self, t9: float) -> float:
         # lin-log interpolation

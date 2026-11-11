@@ -1,5 +1,10 @@
-from typing import List, Dict, Optional
+from typing import List, Mapping, Optional, Union
 from dataclasses import dataclass, field
+from types import MappingProxyType
+
+from .unit import Unit, TIME_UNITS, LENGTH_UNITS, MASS_UNITS, TEMPERATURE_UNITS, ENERGY_UNITS, \
+                  ENTROPY_UNITS, VELOCITY_UNITS, MASS_RATE_UNITS, DENSITY_UNITS, PRESSURE_UNITS, \
+                  POWER_UNITS, SPECIFIC_ENERGY_UNITS, SPECIFIC_POWER_UNITS
 
 
 @dataclass(frozen=True)
@@ -14,13 +19,24 @@ class LabelDescriptor(object):
     full: Optional[str] = None    # Full representation
 
     # Units
-    units: Dict[str, str] = field(default_factory=dict)  # Unit representations in different systems
-    log: bool = field(default=False)                     # Is it preferred to plot quantity in log scale?
-    default_units: Optional[str] = None                  # Default unit representation key in the `units` dictionary
+    # Unit systems available for this quantity. Plain LaTeX strings are accepted
+    # for convenience, they give labels but no unit conversion (except identity).
+    units: Mapping[str, Union[Unit, str]] = field(default_factory=dict)
+    log: bool = field(default=False)          # Is it preferred to plot quantity in log scale?
+    default_units: Optional[str] = None       # Default unit system key in the units dictionary
+    data_units: Optional[str] = None          # Unit system of the data stored in the FLASH output
 
     def __post_init__(self):
+        object.__setattr__(self, 'aliases', tuple(self.aliases))
+        units = {k: (u if isinstance(u, Unit) else Unit(str(u), None)) for k,u in self.units.items()}
+        object.__setattr__(self, 'units', MappingProxyType(units))
+        if self.data_units is None:
+            object.__setattr__(self, 'data_units', self.default_units)
+
         if self.default_units and self.default_units not in self.units:
-            raise ValueError(f'Default units not found in unit systems: {default_units}')
+            raise ValueError(f'Default units not found in unit systems: {self.default_units}')
+        if self.data_units and self.data_units not in self.units:
+            raise ValueError(f'Data units not found in unit systems: {self.data_units}')
 
 
 _DEFAULT_DESCRIPTORS = [
@@ -30,26 +46,17 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$t$',
         short='t',
         full='Time',
-        units={
-            'cgs': r'\mathrm{s}',
-            'si': r'\mathrm{s}',
-            'yr': r'\mathrm{yr}',
-            'Myr': r'\mathrm{Myr}',
-            'Gyr': r'\mathrm{Gyr}',
-        },
+        units=TIME_UNITS,
         log=False,
         default_units='cgs'
     ),
     LabelDescriptor(
-        key='time post bounce',
-        aliases=['tbounce', 'tpb'],
+        key='time post-bounce',
+        aliases=['time post bounce', 'tbounce', 'tpb'],
         symbol=r'$t - t_\mathrm{bounce}$',
         short=r'$t_\mathrm{pb}$',
         full='Time Post Bounce',
-        units={
-            'cgs': r'\mathrm{s}',
-            'si': r'\mathrm{s}',
-        },
+        units=TIME_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -59,12 +66,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$r$',
         short='r',
         full='Radius',
-        units={
-            'cgs': r'\mathrm{cm}',
-            'si': r'\mathrm{m}',
-            'km': r'\mathrm{km}',
-            'sun': r'R_\odot',
-        },
+        units=LENGTH_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -74,12 +76,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$\mathrm{d}r$',
         short='dr',
         full='Cell size',
-        units={
-            'cgs': r'\mathrm{cm}',
-            'si': r'\mathrm{m}',
-            'km': r'\mathrm{km}',
-            'sun': r'R_\odot',
-        },
+        units=LENGTH_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -89,12 +86,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$r_\mathrm{sh}$',
         short='Shock Rad.',
         full='Shock Radius',
-        units={
-            'cgs': r'\mathrm{cm}',
-            'si': r'\mathrm{m}',
-            'km': r'\mathrm{km}',
-            'sun': r'R_\odot',
-        },
+        units=LENGTH_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -104,12 +96,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$R_\mathrm{NS}$',
         short=r'$r_\mathrm{NS}$',
         full='Neutron Star Radius',
-        units={
-            'cgs': r'\mathrm{cm}',
-            'si': r'\mathrm{m}',
-            'km': r'\mathrm{km}',
-            'sun': r'R_\odot',
-        },
+        units=LENGTH_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -119,13 +106,38 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$R_\mathrm{PNS}$',
         short=r'$r_\mathrm{PNS}$',
         full='Proto-Neutron Star Radius',
-        units={
-            'cgs': r'\mathrm{cm}',
-            'si': r'\mathrm{m}',
-            'km': r'\mathrm{km}',
-            'sun': r'R_\odot',
-        },
+        units=LENGTH_UNITS,
         log=False,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
+        key='electron neutrino neutrinosphere radius',
+        aliases=['R_nue'],
+        symbol=r'$R_{\nu_e}$',
+        short=r'$\nu_e$-sphere Rad.',
+        full=r'Electron Neutrino Neutrinosphere Radius',
+        units=LENGTH_UNITS,
+        log=True,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
+        key='electron antineutrino neutrinosphere radius',
+        aliases=['R_anue'],
+        symbol=r'$R_{\bar{\nu}_e}$',
+        short=r'$\bar{\nu}_e$-sphere Rad.',
+        full=r'Electron Antineutrino Neutrinosphere Radius',
+        units=LENGTH_UNITS,
+        log=True,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
+        key='heavy lepton neutrino neutrinosphere radius',
+        aliases=['R_nux'],
+        symbol=r'$R_{\nu_x}$',
+        short=r'$\nu_x$-sphere Rad.',
+        full=r'Heavy Lepton Neutrino Neutrinosphere Radius',
+        units=LENGTH_UNITS,
+        log=True,
         default_units='cgs'
     ),
     LabelDescriptor(
@@ -134,12 +146,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$M$',
         short=r'$m$',
         full='Mass',
-        units={
-            'cgs': r'\mathrm{g}',
-            'si': r'\mathrm{kg}',
-            'amu': r'\mathrm{amu}',
-            'sun': r'M_\odot',
-        },
+        units=MASS_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -149,11 +156,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$M_\mathrm{point}$',
         short=r'$m_\mathrm{point}$',
         full='Point Mass',
-        units={
-            'cgs': r'\mathrm{g}',
-            'si': r'\mathrm{kg}',
-            'sun': r'M_\odot',
-        },
+        units=MASS_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -163,11 +166,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$M_\mathrm{NS}$',
         short=r'$m_\mathrm{NS}$',
         full='Neutron Star Mass',
-        units={
-            'cgs': r'\mathrm{g}',
-            'si': r'\mathrm{kg}',
-            'sun': r'M_\odot',
-        },
+        units=MASS_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -177,11 +176,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$M_\mathrm{PNS}$',
         short=r'$m_\mathrm{PNS}$',
         full='Proto-Neutron Star Mass',
-        units={
-            'cgs': r'\mathrm{g}',
-            'si': r'\mathrm{kg}',
-            'sun': r'M_\odot',
-        },
+        units=MASS_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -191,12 +186,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$\dot{M}$',
         short=r'$\dot{m}$',
         full='Mass Accretion Rate',
-        units={
-            'cgs': r'\mathrm{g\,s^{-1}}',
-            'si': r'\mathrm{kg\,s^{-1}}',
-            'sun': r'M_\odot\,\mathrm{s^{-1}}',
-            'yr': r'M_\odot\,\mathrm{yr^{-1}}',
-        },
+        units=MASS_RATE_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -206,11 +196,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$\rho$',
         short='Dens.',
         full='Density',
-        units={
-            'cgs': r'\mathrm{g\,cm^{-3}}',
-            'si': r'\mathrm{kg\,m^{-3}}',
-            'fermi': r'\mathrm{fm^{-3}}',
-        },
+        units=DENSITY_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -219,12 +205,8 @@ _DEFAULT_DESCRIPTORS = [
         aliases=['central rho', 'rhoc', 'central dens', 'densc'],
         symbol=r'$\rho_\mathrm{c}$',
         short='Cent. Dens.',
-        full='Cenral Density',
-        units={
-            'cgs': r'\mathrm{g\,cm^{-3}}',
-            'si': r'\mathrm{kg\,m^{-3}}',
-            'fermi': r'\mathrm{fm^{-3}}',
-        },
+        full='Central Density',
+        units=DENSITY_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -234,11 +216,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$\rho r^3$',
         short='Scaled Dens.',
         full='Scaled Density',
-        units={
-            'cgs': r'\mathrm{g}',
-            'si': r'\mathrm{kg}',
-            'sun': r'M_\odot',
-        },
+        units=MASS_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -248,11 +226,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$T$',
         short='Temp.',
         full='Temperature',
-        units={
-            'cgs': r'\mathrm{K}',
-            'si': r'\mathrm{K}',
-            'GK': r'\mathrm{GK}',
-        },
+        units=TEMPERATURE_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -262,11 +236,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$T_\mathrm{c}$',
         short='Cent. Temp.',
         full='Central Temperature',
-        units={
-            'cgs': r'\mathrm{K}',
-            'si': r'\mathrm{K}',
-            'GK': r'\mathrm{GK}',
-        },
+        units=TEMPERATURE_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -276,10 +246,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$P$',
         short='Pres.',
         full='Pressure',
-        units={
-            'cgs': r'\mathrm{g\,cm^{-1}\,s^{-2}}',
-            'si': r'\mathrm{kg\,m^{-1}\,s^{-2}}',
-        },
+        units=PRESSURE_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -289,10 +256,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$P_\mathrm{c}$',
         short='Cent. Pres.',
         full='Central Pressure',
-        units={
-            'cgs': r'\mathrm{g\,cm^{-1}\,s^{-2}}',
-            'si': r'\mathrm{kg\,m^{-1}\,s^{-2}}',
-        },
+        units=PRESSURE_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -302,10 +266,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$e_\mathrm{int}$',
         short='Int. Ener.',
         full='Internal Energy',
-        units={
-            'cgs': r'\mathrm{erg\,g^{-1}}',
-            'si': r'\mathrm{J\,kg^{-1}}',
-        },
+        units=SPECIFIC_ENERGY_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -315,10 +276,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$e_\mathrm{kin}$',
         short='Kin. Ener.',
         full='Kinetic Energy',
-        units={
-            'cgs': r'\mathrm{erg\,g^{-1}}',
-            'si': r'\mathrm{J\,kg^{-1}}',
-        },
+        units=SPECIFIC_ENERGY_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -328,10 +286,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$e_\mathrm{tot}$',
         short='Ener.',
         full='Energy',
-        units={
-            'cgs': r'\mathrm{erg\,g^{-1}}',
-            'si': r'\mathrm{J\,kg^{-1}}',
-        },
+        units=SPECIFIC_ENERGY_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -341,11 +296,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$E_\mathrm{exp}$',
         short='Exp. Ener.',
         full='Diagnostic Explosion Energy',
-        units={
-            'cgs': r'\mathrm{erg}',
-            'si': r'\mathrm{J}',
-            'Bethe': r'\mathrm{B}',
-        },
+        units=ENERGY_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -355,10 +306,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$\phi$',
         short='Grav. Pot. Ener.',
         full='Gravitational Potential Energy',
-        units={
-            'cgs': r'\mathrm{erg\,g^{-1}}',
-            'si': r'\mathrm{J\,kg^{-1}}',
-        },
+        units=SPECIFIC_ENERGY_UNITS,
         log=True,
         default_units='cgs'
     ),
@@ -368,10 +316,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$\dot{Q}_\nu$',
         short=r'$\nu$ Heating Rate',
         full='Neutrino Heating Rate',
-        units={
-            'cgs': r'\mathrm{erg\,g^{-1}\,s^{-1}}',
-            'si': r'\mathrm{J\,kg^{-1}\,s^{-1}}',
-        },
+        units=SPECIFIC_POWER_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -381,10 +326,87 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$\dot{Q}_\mathrm{nuc}$',
         short=r'Nuc. Ener. Gen.',
         full='Nuclear Energy Generation Rate',
-        units={
-            'cgs': r'\mathrm{erg\,g^{-1}\,s^{-1}}',
-            'si': r'\mathrm{J\,kg^{-1}\,s^{-1}}',
-        },
+        units=SPECIFIC_POWER_UNITS,
+        log=False,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
+        key='integrated total energy',
+        aliases=['E_total'],
+        symbol=r'$E_\mathrm{tot}$',
+        short=r'Tot. Ener.',
+        full=r'Total Energy',
+        units=ENERGY_UNITS,
+        log=False,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
+        key='integrated kinetic energy',
+        aliases=['E_kinetic'],
+        symbol=r'$E_\mathrm{kin}$',
+        short=r'Kin. Ener.',
+        full=r'Kinetic Energy',
+        units=ENERGY_UNITS,
+        log=False,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
+        key='integrated internal energy',
+        aliases=['E_internal'],
+        symbol=r'$E_\mathrm{int}$',
+        short=r'Int. Ener.',
+        full=r'Internal Energy',
+        units=ENERGY_UNITS,
+        log=False,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
+        key='integrated gravitational energy',
+        aliases=['E_grav', 'gravitational binding energy'],
+        symbol=r'$E_\mathrm{grav}$',
+        short=r'Grav. Ener.',
+        full=r'Gravitational Binding Energy',
+        units=ENERGY_UNITS,
+        log=False,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
+        key='gain region binding energy',
+        aliases=['E_bind,gain', 'ebind gain'],
+        symbol=r'$E_\mathrm{bind,gain}$',
+        short=r'Gain Bind. Ener.',
+        full=r'Binding Energy in the Gain Region',
+        units=ENERGY_UNITS,
+        log=False,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
+        key='gain region heating rate',
+        aliases=['net heating rate, gain', 'qgain'],
+        symbol=r'$\dot{Q}_\mathrm{gain}$',
+        short=r'Gain Heating Rate',
+        full=r'Net Heating Rate in the Gain Region',
+        units=POWER_UNITS,
+        log=False,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
+        key='gain region mass',
+        aliases=['mass in gain region', 'mgain'],
+        symbol=r'$M_\mathrm{gain}$',
+        short=r'Gain Mass',
+        full=r'Mass in the Gain Region',
+        units=MASS_UNITS,
+        log=True,
+        default_units='cgs'
+    ),
+    LabelDescriptor(
+        key='gain region entropy',
+        aliases=['avg entropy in gain', 'sgain'],
+        symbol=r'$\langle s \rangle_\mathrm{gain}$',
+        short=r'Gain Entr.',
+        full=r'Average Entropy in the Gain Region',
+        units=ENTROPY_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -394,39 +416,30 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$L_{\nu_e}$',
         short=r'Electron Neutrino Lum.',
         full='Electron Neutrino Luminosity',
-        units={
-            'cgs': r'\mathrm{erg\,s^{-1}}',
-            'si': r'\mathrm{J\,s^{-1}}',
-            'Bethe': r'\mathrm{B\,s^{-1}}',
-        },
+        units=POWER_UNITS,
+        data_units='B',
         log=False,
         default_units='cgs'
     ),
     LabelDescriptor(
         key='electron antineutrino luminosity',
-        aliases=['lum anue', 'M1 lum tot anue'],
+        aliases=['lum anue', 'lum nua', 'M1 lum tot anue'],
         symbol=r'$L_{\bar{\nu}_e}$',
         short=r'Electron Antineutrino Lum.',
         full='Electron Antineutrino Luminosity',
-        units={
-            'cgs': r'\mathrm{erg\,s^{-1}}',
-            'si': r'\mathrm{J\,s^{-1}}',
-            'Bethe': r'\mathrm{B\,s^{-1}}',
-        },
+        units=POWER_UNITS,
+        data_units='B',
         log=False,
         default_units='cgs'
     ),
     LabelDescriptor(
         key='heavy lepton neutrino luminosity',
         aliases=['lum nux', 'M1 lum tot nux'],
-        symbol=r'$L_{\bar{\nu}_e}$',
+        symbol=r'$L_{\nu_x}$',
         short=r'Heavy Lepton Neutrino Lum.',
         full='Heavy Lepton Neutrino Luminosity',
-        units={
-            'cgs': r'\mathrm{erg\,s^{-1}}',
-            'si': r'\mathrm{J\,s^{-1}}',
-            'Bethe': r'\mathrm{B\,s^{-1}}',
-        },
+        units=POWER_UNITS,
+        data_units='B',
         log=False,
         default_units='cgs'
     ),
@@ -436,53 +449,38 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$L_\nu$',
         short=r'Neutrino Lum.',
         full='Neutrino Luminosity',
-        units={
-            'cgs': r'\mathrm{erg\,s^{-1}}',
-            'si': r'\mathrm{J\,s^{-1}}',
-            'Bethe': r'\mathrm{B\,s^{-1}}',
-        },
+        units=POWER_UNITS,
+        data_units='B',
         log=False,
         default_units='cgs'
     ),
     LabelDescriptor(
         key='mean electron neutrino energy',
-        aliases=['electron neutrino energy', 'enue'],
+        aliases=['electron neutrino energy', 'enue', 'M1 aveE nue'],
         symbol=r'$\langle E_{\nu_e} \rangle$',
         short=r'Mean $\nu_e$ Energy',
         full='Mean Electron Neutrino Energy',
-        units={
-            'cgs': r'\mathrm{erg}',
-            'si': r'\mathrm{J}',
-            'MeV': r'\mathrm{MeV}',
-        },
+        units=ENERGY_UNITS,
         log=False,
         default_units='MeV'
     ),
     LabelDescriptor(
         key='mean electron antineutrino energy',
-        aliases=['electron antineutrino energy', 'enua'],
+        aliases=['electron antineutrino energy', 'enua', 'M1 aveE anue'],
         symbol=r'$\langle E_{\bar{\nu}_e} \rangle$',
         short=r'Mean $\bar{\nu}_e$ Energy',
         full='Mean Electron Antineutrino Energy',
-        units={
-            'cgs': r'\mathrm{erg}',
-            'si': r'\mathrm{J}',
-            'MeV': r'\mathrm{MeV}',
-        },
+        units=ENERGY_UNITS,
         log=False,
         default_units='MeV'
     ),
     LabelDescriptor(
         key='mean heavy lepton neutrino energy',
-        aliases=['heavy lepton neutrino energy', 'enux'],
+        aliases=['heavy lepton neutrino energy', 'enux', 'M1 aveE nux'],
         symbol=r'$\langle E_{\nu_x} \rangle$',
         short=r'Mean $\nu_x$ Energy',
         full='Mean Heavy Lepton Neutrino Energy',
-        units={
-            'cgs': r'\mathrm{erg}',
-            'si': r'\mathrm{J}',
-            'MeV': r'\mathrm{MeV}',
-        },
+        units=ENERGY_UNITS,
         log=False,
         default_units='MeV'
     ),
@@ -492,53 +490,37 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$\langle E_{\nu} \rangle$',
         short=r'Mean $\nu$ Energy',
         full='Mean Neutrino Energy',
-        units={
-            'cgs': r'\mathrm{erg}',
-            'si': r'\mathrm{J}',
-            'MeV': r'\mathrm{MeV}',
-        },
+        units=ENERGY_UNITS,
         log=False,
         default_units='MeV'
     ),
     LabelDescriptor(
         key='root-mean-square electron neutrino energy',
-        aliases=['rms electron neutrino energy', 'rnue'],
+        aliases=['rms electron neutrino energy', 'rnue', 'M1 rmsE nue'],
         symbol=r'$\sqrt{\langle E^2_{\nu_e} \rangle}$',
         short=r'RMS $\nu_e$ Energy',
         full='Root-Mean-Square Electron Neutrino Energy',
-        units={
-            'cgs': r'\mathrm{erg}',
-            'si': r'\mathrm{J}',
-            'MeV': r'\mathrm{MeV}',
-        },
+        units=ENERGY_UNITS,
         log=False,
         default_units='MeV'
     ),
     LabelDescriptor(
         key='root-mean-square electron antineutrino energy',
-        aliases=['rms electron antineutrino energy', 'rnua'],
+        aliases=['rms electron antineutrino energy', 'rnua', 'M1 rmsE anue'],
         symbol=r'$\sqrt{\langle E^2_{\bar{\nu}_e} \rangle}$',
         short=r'RMS $\bar{\nu}_e$ Energy',
         full='Root-Mean-Square Electron Antineutrino Energy',
-        units={
-            'cgs': r'\mathrm{erg}',
-            'si': r'\mathrm{J}',
-            'MeV': r'\mathrm{MeV}',
-        },
+        units=ENERGY_UNITS,
         log=False,
         default_units='MeV'
     ),
     LabelDescriptor(
         key='root-mean-square heavy lepton neutrino energy',
-        aliases=['rms heavy lepton neutrino energy', 'rnux'],
+        aliases=['rms heavy lepton neutrino energy', 'rnux', 'M1 rmsE nux'],
         symbol=r'$\sqrt{\langle E^2_{\nu_x} \rangle}$',
         short=r'RMS $\nu_x$ Energy',
         full='Root-Mean-Square Heavy Lepton Neutrino Energy',
-        units={
-            'cgs': r'\mathrm{erg}',
-            'si': r'\mathrm{J}',
-            'MeV': r'\mathrm{MeV}',
-        },
+        units=ENERGY_UNITS,
         log=False,
         default_units='MeV'
     ),
@@ -548,11 +530,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$\sqrt{\langle E^2_{\nu} \rangle}$',
         short=r'RMS $\nu$ Energy',
         full='Root-Mean-Square Neutrino Energy',
-        units={
-            'cgs': r'\mathrm{erg}',
-            'si': r'\mathrm{J}',
-            'MeV': r'\mathrm{MeV}',
-        },
+        units=ENERGY_UNITS,
         log=False,
         default_units='MeV'
     ),
@@ -562,11 +540,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$v$',
         short='Vel.',
         full='Velocity',
-        units={
-            'cgs': r'\mathrm{cm\,s^{-1}}',
-            'si': r'\mathrm{m\,s^{-1}}',
-            'km': r'\mathrm{km\,s^{-1}}',
-        },
+        units=VELOCITY_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -576,11 +550,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$v_\mathrm{rad}$',
         short='Rad. Vel.',
         full='Radial Velocity',
-        units={
-            'cgs': r'\mathrm{cm\,s^{-1}}',
-            'si': r'\mathrm{m\,s^{-1}}',
-            'km': r'\mathrm{km\,s^{-1}}',
-        },
+        units=VELOCITY_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -590,11 +560,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$v_\mathrm{sh}$',
         short='Sh. Vel.',
         full='Shock Velocity',
-        units={
-            'cgs': r'\mathrm{cm\,s^{-1}}',
-            'si': r'\mathrm{m\,s^{-1}}',
-            'km': r'\mathrm{km\,s^{-1}}',
-        },
+        units=VELOCITY_UNITS,
         log=False,
         default_units='cgs'
     ),
@@ -604,10 +570,7 @@ _DEFAULT_DESCRIPTORS = [
         symbol=r'$s$',
         short='Entr.',
         full='Entropy',
-        units={
-            'cgs': r'k_B\,\mathrm{baryon^{-1}}',
-            'si': r'k_B\,\mathrm{baryon^{-1}}',
-        },
+        units=ENTROPY_UNITS,
         log=False,
         default_units='cgs'
     ),

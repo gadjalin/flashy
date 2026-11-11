@@ -1,18 +1,21 @@
 # For type hints
 from __future__ import annotations
-from typing import List, Union
+from typing import List, Optional, Union
 
 import numpy as np
 import xarray as xr
 import re
+
+from .._utils import readonly
 
 
 class DatRun(object):
     _source_file: str
     _field_list: List[str]
     _data: xr.DataArray
+    _restarts: np.ndarray
 
-    def __init__(self, data: np.ndarray, source: str):
+    def __init__(self, data: np.ndarray, source: str, restarts: Optional[List[float]] = None):
         """
         Create a new DatRun.
 
@@ -23,8 +26,11 @@ class DatRun(object):
             being the 'time' column.
         source : str
             Path to the dat file where this run comes from.
+        restarts : list of float, optional
+            Times at which the simulation was restarted.
         """
         self._source_file = source
+        self._restarts = np.sort(np.asarray(restarts if restarts is not None else [], dtype=np.float64))
         if isinstance(data, np.ndarray):
             self._field_list = list(data.dtype.names)
             # Omit time column
@@ -63,23 +69,23 @@ class DatRun(object):
                 if len(self) == 1:
                     return float(self._data.coords['time'].to_numpy())
                 else:
-                    return self._data.coords['time'].to_numpy()
+                    return readonly(self._data.coords['time'].to_numpy())
             else:
                 if len(self) == 1:
                     return float(self._data.isel(field=key-1).to_numpy())
                 else:
-                    return self._data.isel(field=key-1).to_numpy()
+                    return readonly(self._data.isel(field=key-1).to_numpy())
         elif isinstance(key, str):
             if key == 'time' or key == 't':
                 if len(self) == 1:
                     return float(self._data.coords['time'].to_numpy())
                 else:
-                    return self._data.coords['time'].to_numpy()
+                    return readonly(self._data.coords['time'].to_numpy())
             else:
                 if len(self) == 1:
                     return float(self._data.sel(field=key).to_numpy())
                 else:
-                    return self._data.sel(field=key).to_numpy()
+                    return readonly(self._data.sel(field=key).to_numpy())
         elif isinstance(key, float) or isinstance(key, slice) or \
              (isinstance(key, (list, tuple, np.ndarray)) and all(isinstance(v, float) for v in key)):
             return self.select_times(key)
@@ -112,14 +118,30 @@ class DatRun(object):
         else:
             raise RuntimeError(f'Invalid type: {type(t)}')
 
-        return DatRun(data, self._source_file)
+        times = data.coords['time'].to_numpy()
+        if len(times) > 0:
+            restarts = self._restarts[(self._restarts >= times.min()) & (self._restarts <= times.max())]
+        else:
+            restarts = []
+
+        return DatRun(data, self._source_file, restarts)
 
     @property
     def field_list(self) -> List[str]:
         """
         A list of available fields (columns) in the dat file.
         """
-        return self._field_list
+        return self._field_list.copy()
+
+    @property
+    def restarts(self) -> np.ndarray:
+        """
+        Sorted array of times at which the simulation was restarted.
+
+        A restart is detected when a time discontinuity is detected
+        in the dat file.
+        """
+        return readonly(self._restarts)
 
 
 class DatFile(object):
@@ -130,10 +152,11 @@ class DatFile(object):
     from a FLASH dat file.
     If the file contains multiple runs,
     the data from each run are split into different lists.
-    Different runs can only be detected if they are
-    preceded by a new header, or if there is a jump in time.
-    Thus, contiguous output resulting from from multiple restarts
-    is considered as one run.
+    A new run only starts when a simulation is started
+    from scratch (which prints a new header in the dat file).
+    If a discontinuity in time is found due to a restart,
+    the overlapping entries generated until the restart are
+    overwritten by the newest ones.
     """
     _source_file: str
     _field_list: List[str]
@@ -146,7 +169,6 @@ class DatFile(object):
         self._runs = None
         self._loaded = False
 
-    # TODO This may be redundant
     @staticmethod
     def load(file: str) -> DatFile:
         return DatFile.load_file(file)
@@ -197,7 +219,7 @@ class DatFile(object):
         """
         A list of available fields (columns) in the dat file.
         """
-        return self._field_list
+        return self._field_list.copy()
 
     @property
     def size(self) -> int:
@@ -237,7 +259,7 @@ class DatFile(object):
             runs = [self._runs[key]]
         elif isinstance(key, (list, tuple, np.ndarray)) and all(isinstance(i, int) for i in key):
             runs = [self._runs[i] for i in key]
-        elif isinstance(runs, slice):
+        elif isinstance(key, slice):
             runs = self._runs[key]
         elif key is None:
             runs = self._runs[:]
@@ -245,15 +267,19 @@ class DatFile(object):
             raise TypeError(f'Invalid index type: {type(key)}')
 
         new_xda = None
+        restarts = np.array([], dtype=np.float64)
         for run in runs:
             xda = run._data
             if new_xda is not None:
                 tmin = xda.coords['time'].values[0]
                 new_xda = new_xda.sel(time=new_xda['time'] < tmin)
                 xda = xr.concat([new_xda, xda], dim='time')
+                # Discard restarts from overwritten data
+                restarts = restarts[restarts < tmin]
+            restarts = np.concatenate((restarts, run._restarts))
             new_xda = xda
 
-        new_run = DatRun(new_xda, self._source_file)
+        new_run = DatRun(new_xda, self._source_file, restarts)
         return new_run
 
     def read(self, file: str) -> None:
@@ -314,6 +340,7 @@ class DatFile(object):
 
     def _parse_dat_runs(self, file: str, field_list: List[str]) -> List[DatRun]:
         raw_data = []
+        restarts = []
         runs = []
         last_time = None
         line_number = 0
@@ -328,8 +355,9 @@ class DatFile(object):
                 # Reached a header, start new run
                 if line.startswith('#'):
                     if raw_data:
-                        runs.append(self._make_run(raw_data, field_list, file))
+                        runs.append(self._make_run(raw_data, field_list, file, restarts))
                         raw_data = []
+                    restarts = []
                     last_time = None
                     continue
 
@@ -339,20 +367,21 @@ class DatFile(object):
                 if len(values) != len(field_list):
                     raise RuntimeError(f'{file}:{line_number}: values do not match column count ({len(values)} vs {len(field_list)})')
 
-                # Discontinuous time means restart from earlier checkpoint.
-                # TODO no-overlap restarts: if no header is printed but time is
-                # discontinuous, stitch runs together anyway using the most recent data
+                # Stitch runs at restart discontinuities
                 current_time = values[0]
-                if last_time is not None and current_time < last_time:
-                    runs.append(self._make_run(raw_data, field_list, file))
-                    raw_data = []
+                if last_time is not None and current_time <= last_time:
+                    while raw_data and raw_data[-1][0] >= current_time:
+                        raw_data.pop()
+                    # Earlier restarts whose output was just discarded are superseded
+                    restarts = [t for t in restarts if t < current_time]
+                    restarts.append(current_time)
 
                 raw_data.append(values)
                 last_time = current_time
 
             # Save last run in file
             if raw_data:
-                runs.append(self._make_run(raw_data, field_list, file))
+                runs.append(self._make_run(raw_data, field_list, file, restarts))
 
         return runs
 
@@ -368,10 +397,16 @@ class DatFile(object):
 
         return values
 
-    def _make_run(self, raw_data: List[float], field_list: List[str], source: str) -> DatRun:
+    def _make_run(
+        self,
+        raw_data: List[List[float]],
+        field_list: List[str],
+        source: str,
+        restarts: Optional[List[float]] = None
+    ) -> DatRun:
         # Make a structured numpy array and pass to DatRun constructor
         dtype = [(field, np.float64) for field in field_list]
         data = np.array([tuple(row) for row in raw_data], dtype=dtype)
-        run = DatRun(data, source)
+        run = DatRun(data, source, restarts)
         return run
 

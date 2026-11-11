@@ -15,14 +15,14 @@ _M_REF = AMU         # Reference mass is amu for SFHo
 def sigma_e(e_nu: float) -> float:
     return _SIGMA0 * (1.0 + 3.0*_GA**2)/4.0 \
          * ((e_nu + _DELTA_NP) / M_E)**2 \
-         * (1.0 - (M_E / (e_nu + _DELTA_NP)**2))**0.5 \
+         * (1.0 - (M_E / (e_nu + _DELTA_NP))**2)**0.5 \
          * (1.0 + 1.1*e_nu/_M_REF) # Weak magnetism
 
 # electron antineutrino - proton cross section
 def sigma_a(e_nu: float) -> float:
     return _SIGMA0 * (1.0 + 3.0*_GA**2)/4.0 \
          * ((e_nu - _DELTA_NP) / M_E)**2 \
-         * (1.0 - (M_E / (e_nu - _DELTA_NP)**2))**0.5 \
+         * (1.0 - (M_E / (e_nu - _DELTA_NP))**2)**0.5 \
          * (1.0 - 7.1*e_nu/_M_REF) # Weak magnetism
 
 # electron neutrino - heavy nucleus cross section
@@ -43,7 +43,7 @@ def sigma_A(
 
     return _SIGMA0/14.0 * _GA**2 * Z * N \
          * ((e_nu + Q) / M_E)**2 \
-         * (1.0 - (M_E / (e_nu + Q)**2))**0.5 \
+         * (1.0 - (M_E / (e_nu + Q))**2)**0.5 \
          * 10**(np.log10(1.0 + 10**SA) - np.log10(1.0 + 10**f))
          #* np.exp((mu_n - mu_p - Q)/(T*KELVIN_TO_MEV))
 

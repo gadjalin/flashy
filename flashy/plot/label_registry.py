@@ -1,7 +1,11 @@
 from typing import Dict, Optional, Union
-from .label_descriptor import LabelDescriptor
-
 import math
+import re
+
+import numpy as np
+
+from .label_descriptor import LabelDescriptor
+from ..nuc.nucleus import Nucleus, find_isotope
 
 
 _UNIT_SURROUND = {
@@ -9,6 +13,25 @@ _UNIT_SURROUND = {
     'parens': ('(', ')'),
     'open': ('', '')
 }
+
+# Only resolve isotope keys e.g. h1, ni56, not single letters e.g. p, n
+_ISOTOPE_KEY = re.compile(r'^[A-Za-z]{1,2}\d{1,3}$')
+_ISOTOPE_NAMES = {'neut', 'neutron', 'neutrons', 'prot', 'proton', 'protons'}
+
+
+def _parse_isotope(key: str) -> Optional[Nucleus]:
+    if key.lower() not in _ISOTOPE_NAMES and not _ISOTOPE_KEY.match(key):
+        return None
+    try:
+        return find_isotope(key)
+    except ValueError:
+        return None
+
+
+def _isotope_tex(nucleus: Nucleus) -> str:
+    if nucleus.Z == 0:
+        return r'\mathrm{n}'
+    return fr'^{{{nucleus.A}}}\mathrm{{{nucleus.symbol}}}'
 
 
 class LabelRegistry(object):
@@ -20,7 +43,7 @@ class LabelRegistry(object):
         self._alias_map = {}
 
     def __contains__(self, key: str) -> bool:
-        return key in self._alias_map
+        return key in self._alias_map or _parse_isotope(key) is not None
 
     def __str__(self) -> str:
         return f'LabelRegistry; {len(self._descriptors)} entries'
@@ -45,7 +68,7 @@ class LabelRegistry(object):
         key = descriptor.key
 
         # Check no key or alias clash
-        for alias in ([key] + descriptor.aliases):
+        for alias in [key, *descriptor.aliases]:
             if alias in self._alias_map:
                 existing = self._alias_map[alias]
                 raise ValueError(f'Alias already registered for key {existing}: {alias})')
@@ -54,7 +77,7 @@ class LabelRegistry(object):
         self._descriptors[key] = descriptor
 
         # Register new aliases
-        for alias in ([key] + descriptor.aliases):
+        for alias in [key, *descriptor.aliases]:
             self._alias_map[alias] = key
 
     def get_label(
@@ -64,11 +87,26 @@ class LabelRegistry(object):
         scale: Optional[Union[int, float, str]] = None,
         scale_style: str = 'auto',
         unit_style: str = 'brackets',
-        name_style: str = 'symbol'
+        name_style: str = 'symbol',
+        default: Optional[str] = None
     ) -> str:
-        # Get descriptor
-        descriptor = self.get_descriptor(key)
+        # Get descriptor, or format the default as the name if the key is unknown
+        if key not in self:
+            if default is None:
+                raise KeyError(f'Unresolved key: {key}')
+            return self.make_label(default, None, scale, scale_style, unit_style)
 
+        return self.format_label(self.get_descriptor(key), units, scale, scale_style, unit_style, name_style)
+
+    def format_label(
+        self,
+        descriptor: LabelDescriptor,
+        units: Optional[str] = None,
+        scale: Optional[Union[int, float, str]] = None,
+        scale_style: str = 'auto',
+        unit_style: str = 'brackets',
+        name_style: str = 'symbol',
+    ) -> str:
         # Resolve name style
         name = getattr(descriptor, name_style, None)
         if name is None:
@@ -138,11 +176,87 @@ class LabelRegistry(object):
 
         return label
 
-    def get_plot_scale(self, key: str) -> str:
-        return 'log' if self._descriptors[self._resolve_canonical_key(key)].log else 'linear'
+    def get_plot_scale(self, key: str, default: Optional[str] = None) -> str:
+        if key not in self and default is not None:
+            return default
+        return 'log' if self.get_descriptor(key).log else 'linear'
 
-    def get_descriptor(self, key: str) -> LabelDescriptor:
+    def get_unit_factor(
+        self,
+        key: str,
+        units: Optional[str] = None,
+        from_units: Optional[str] = None,
+        default: Optional[float] = None
+    ) -> float:
+        if key not in self and default is not None:
+            return float(default)
+
+        desc = self.get_descriptor(key)
+        target = units or desc.default_units
+        source = from_units or desc.data_units
+
+        # Quantities without units, or no conversion requested
+        if target == source:
+            if target is not None and target not in desc.units:
+                raise ValueError(f'Unit system not found in descriptor {desc.key}: {target}')
+            return 1.0
+
+        if not desc.units:
+            raise ValueError(f'Quantity {desc.key} has no units, cannot convert to {target or source}')
+        factors = []
+        for system in (target, source):
+            if system is None or system not in desc.units:
+                raise ValueError(f'Unit system not found in descriptor {desc.key}: {system}')
+            factor = desc.units[system].conversion_factor
+            if factor is None:
+                raise ValueError(f'No conversion factor for unit system {system} in descriptor {desc.key}')
+            factors.append(factor)
+
+        target_factor, source_factor = factors
+        return source_factor / target_factor
+
+    def convert(
+        self,
+        key: str,
+        value,
+        units: Optional[str] = None,
+        from_units: Optional[str] = None,
+        default_factor: Optional[float] = None
+    ):
+        factor = self.get_unit_factor(key, units, from_units, default_factor)
+        if np.isscalar(value):
+            return value * factor
+        return np.asarray(value) * factor
+
+    def get_descriptor(self, key: str, default: Optional[LabelDescriptor] = None) -> LabelDescriptor:
+        if key not in self and default is not None:
+            return default
+        if key not in self._alias_map:
+            nucleus = _parse_isotope(key)
+            if nucleus is not None:
+                return self.get_isotope_descriptor(nucleus)
         return self._descriptors[self._resolve_canonical_key(key)]
+
+    def get_isotope_descriptor(
+        self,
+        species: Union[str, Nucleus],
+        quantity: str = 'mass fraction'
+    ) -> LabelDescriptor:
+        nucleus = species if isinstance(species, Nucleus) else find_isotope(species)
+        desc = self._descriptors[self._resolve_canonical_key(quantity)]
+        if desc.units:
+            raise ValueError(f'Quantity {desc.key} has units, cannot build an isotope label from it')
+
+        tex = _isotope_tex(nucleus)
+        symbol = desc.symbol.strip('$') if desc.symbol else desc.key
+        return LabelDescriptor(
+            key=f'{desc.key} {nucleus}',
+            aliases=[],
+            symbol=f'${symbol}({tex})$',
+            short=f'${tex}$ {desc.short}' if desc.short else None,
+            full=f'${tex}$ {desc.full}' if desc.full else None,
+            log=desc.log,
+        )
 
     def _resolve_canonical_key(self, key: str) -> str:
         canonical_key = self._alias_map.get(key)
@@ -153,10 +267,10 @@ class LabelRegistry(object):
 
     def _resolve_unit_format(self, desc: LabelDescriptor, units: Optional[str]) -> str:
         if units and units not in desc.units:
-            raise ValueError(f'Unit system not found in decriptor {desc.key}: {units}')
+            raise ValueError(f'Unit system not found in descriptor {desc.key}: {units}')
 
         unit_key = units or desc.default_units
-        return desc.units.get(unit_key) if unit_key else ''
+        return desc.units[unit_key].latex if unit_key else ''
 
     def _resolve_scale_format(self, scale: Union[int, float, str], style: str) -> str:
         precision = 3

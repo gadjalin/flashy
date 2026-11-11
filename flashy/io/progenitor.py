@@ -6,6 +6,7 @@ import numpy as np
 import re
 
 from ..constants import R_SUN
+from .._utils import readonly
 
 
 class Progenitor(object):
@@ -187,7 +188,7 @@ class Progenitor(object):
 
     def __getitem__(self, key: str):
         self.__checkloaded()
-        return self._data[key]
+        return readonly(self._data[key])
 
     def read(
         self,

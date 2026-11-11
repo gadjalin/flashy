@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import List, Dict, Optional, Union, Tuple
 
+import os
 import numpy as np
 import xarray as xr
 from glob import glob
@@ -10,12 +11,13 @@ from pathlib import Path
 import h5py
 
 from ..io import Progenitor, DatFile, TimeSeries1D
-from ..post import get_bounce_time
+from ..post import get_bounce_time, diagnostic_mask
 from ..nuc import find_isotope, Nucleus
-from ..eos import EosTable, EOS_MODE
+from ..eos import EosTable
+from ..constants import M_SUN
 
 
-_REQUIRED_FIELDS = ['dens', 'temp', 'entr', 'ye', 'fnue', 'fnua', 'fnux', 'enue', 'enua', 'enux']
+_REQUIRED_FIELDS = ['dens', 'temp', 'entr', 'ye', 'fnue', 'fnua', 'fnux', 'enue', 'enua', 'enux', 'velx', 'ener', 'gpot']
 _TRAJ_FIELDS = ['temp', 'dens', 'r', 'ye', 'fnue', 'fnua', 'fnux', 'enue', 'enua', 'enux', 'entr']
 _TQDM_FORMAT = '{desc:<5.5}{percentage:3.0f}%|{bar:20}{r_bar}'
 
@@ -229,31 +231,34 @@ class Tracers1D(object):
     ) -> None:
         aion = np.array([species.A for species in network])
         zion = np.array([species.Z for species in network])
+        header = 'A   Z   X'
 
         for row,i in tqdm(zip(Xs,range(len(Xs))), total=len(Xs), bar_format=_TQDM_FORMAT):
             X = np.array(row.tolist(), dtype=np.float64)
             data = np.column_stack((aion, zion, X))
-            header = 'A     Z     X \n ---------------'
-            np.savetxt(f'{seed_dir}/seed_{i:>04}.dat', data, fmt=('%d', '%d', '%.6e'), header=header, delimiter='\t')
+            save_file = os.path.join(seed_dir, f'seed{i:>04}.dat')
+            np.savetxt(save_file, data, fmt=(' %-3d', '%-3d', '%.6e'), header=header)
 
     @staticmethod
     def calculate_trajectories(
         series: TimeSeries1D,
         masses: np.ndarray,
-        eos: Optional[EosTable] = None
+        eos: Optional[EosTable] = None,
+        extra_fields: List[str] = []
     ) -> xr.Dataset:
         # We start from the end of the simulation
         # And save data for every tracers
         L_from_f = lambda r, f: 4*np.pi*r**2*f
-        dtypes = [(field, np.float64) for field in _TRAJ_FIELDS]
 
         times = series.times
         data_list = []
+        masses = np.atleast_1d(masses)
 
         for t,data in tqdm(series, total=len(series), bar_format=_TQDM_FORMAT):
             # Get tracers locations
             rs = np.interp(masses, data['mass'], data['r'])
-            all_data = data.interp(r=rs)[_TRAJ_FIELDS + ['mass']]
+            interp_data = data.interp(r=rs)
+            all_data = interp_data[_TRAJ_FIELDS + ['mass'] + extra_fields]
 
             # Swap r coordinate for tracer mass
             all_data = all_data.swap_dims({'r':'mass'})
@@ -262,18 +267,7 @@ class Tracers1D(object):
             all_data.coords['tracer'] = masses
 
             if eos is not None:
-                xrho = all_data['dens'].to_numpy()
-                xtemp = np.full_like(xrho, eos.minimum_temperature, dtype=np.float64)
-                xye = all_data['ye'].to_numpy()
-
-                coldenergydensity = eos.nuc_eos_zone(EOS_MODE.DENS_TEMP, xrho, xtemp, xye)['logenergy']
-
-                coldenergy = (10**(coldenergydensity) - eos.energy_shift)
-                dener = data.interp(r=rs)['ener'].to_numpy() - eos.energy_shift
-                dgrav = data.interp(r=rs)['gpot'].to_numpy()
-                velr = data.interp(r=rs)['velx'].to_numpy()
-
-                ejected = ((dener + dgrav - coldenergy) > 0.0) & (velr > 0.0)
+                ejected = diagnostic_mask(interp_data, eos)
                 all_data = all_data.assign(ejected=('tracer', np.float64(ejected)))
 
             # Append to data list
@@ -304,7 +298,12 @@ class Tracers1D(object):
         names = ['t [s]', 'T [GK]', 'rho[g/cm^3]', 'r [km]', 'Ye',
                  'lnue [erg/s]', 'lanue [erg/s]', 'lnux [erg/s]', 'lanux [erg/s]',
                  'tnue [MeV]', 'tanue [MeV]', 'tnux [Mev]', 'tanux [Mev]',
-                 'entr [k_B/baryon]']
+                 'entr [kB/baryon]']
+
+        if 'ejected' in trajectories:
+            names.append('ejected')
+
+        header = ''.join([name.ljust(24) for name in names])
 
         for i in tqdm(range(len(trajectories.coords['tracer'].to_numpy())), bar_format=_TQDM_FORMAT):
             # Get tracer data
@@ -312,21 +311,22 @@ class Tracers1D(object):
 
             # Cut where tracer stays below Tmax
             mask = data['temp'] < Tmax
+            if not bool(mask[-1]):
+                # Still above Tmax at the end of the simulation
+                tqdm.write(f'warn: tracer {i} (m = {float(data.tracer)/M_SUN:.6e} Msun) never cools below Tmax ({Tmax/1e9:.6f} GK)')
+                continue
             last_mask = mask[::-1].cumprod(dim='time')[::-1].astype(bool)
             cut_time = float(data.time.where(last_mask).dropna('time')[0])
             cut_data = data.sel(time=slice(cut_time, None))
 
-            # Format data to save
-            header = ''.join([name.ljust(17) for name in names])
             save_data = np.column_stack((cut_data.time, cut_data.temp/1e9, cut_data.dens, cut_data.r/1e5, cut_data.ye,
                                          cut_data.lnue*1e51, cut_data.lnua*1e51, cut_data.lnux*0.5e51, cut_data.lnux*0.5e51,
                                          cut_data.tnue, cut_data.tnua, cut_data.tnux, cut_data.tnux, cut_data.entr))
             if 'ejected' in cut_data:
-                header += 'ejected'.ljust(17)
                 save_data = np.column_stack((save_data, cut_data.ejected))
 
-            save_file = tracer_dir + f'/tracer_{i:>04}.dat'
-            np.savetxt(save_file, save_data, fmt=' %.6e   ', header=header)
+            save_file = os.path.join(tracer_dir, f'tracer{i:>04}.dat')
+            np.savetxt(save_file, save_data, fmt=' % .15e', header=header)
 
     @staticmethod
     def _check_stepsize(step_size: int) -> None:

@@ -6,6 +6,7 @@ import numpy as np
 
 from .winvn_database import WinvnDatabase, WinvnNucleus, _WINVN_TEMP_GRID
 from ..constants import K_MEV
+from .._utils import readonly
 
 
 _winvn_database = None
@@ -53,6 +54,10 @@ class NSESolver(object):
         else:
             network = _winvn_database.species
 
+        if network[0] != 'n' or network[1] != 'p':
+            raise RuntimeError(f'Network must start with n and p, got {network[:2]}')
+
+        self._nuclei_names = network
         self._nuclei = [_winvn_database[sp] for sp in network]
 
         self._Ai    = np.atleast_1d([nuc.A           for nuc in self._nuclei])
@@ -60,8 +65,12 @@ class NSESolver(object):
         self._Ni    = np.atleast_1d([nuc.N           for nuc in self._nuclei])
         self._Bi    = np.atleast_1d([nuc.B           for nuc in self._nuclei])
         self._spini = np.atleast_1d([(2.*nuc.spin+1) for nuc in self._nuclei])
-        self._PFi   = np.atleast_1d([nuc.pf          for nuc in self._nuclei])
+        self._PFi   = np.atleast_1d([nuc.pf[:len(_WINVN_TEMP_GRID)] for nuc in self._nuclei])
+        self._lnPFi = np.log(self._PFi)
         self._Gi    = np.ones(len(self._nuclei))
+
+        self._alpha_mask = (self._Ai == 4) & (self._Zi == 2)
+        self._heavy_mask = self._Ai > 4
 
         self._Yn = 0.5
         self._Yp = 0.5
@@ -84,19 +93,19 @@ class NSESolver(object):
 
     @property
     def Ai(self) -> np.ndarray:
-        return self._Ai
+        return readonly(self._Ai)
 
     @property
     def Zi(self) -> np.ndarray:
-        return self._Zi
+        return readonly(self._Zi)
 
     @property
     def Ni(self) -> np.ndarray:
-        return self._Ni
+        return readonly(self._Ni)
 
     @property
     def Yi(self) -> np.ndarray:
-        return self._Yi
+        return readonly(self._Yi)
 
     @property
     def Yn(self) -> float:
@@ -108,12 +117,11 @@ class NSESolver(object):
 
     @property
     def Yalpha(self) -> float:
-        return self._Yi[self._nuclei_names.index('he4')]
+        return np.sum(self._Yi[self._alpha_mask])
 
     @property
     def Yheavy(self) -> float:
-        heavyi = self._nuclei_names.index('he4') + 1
-        return np.sum(self._Yi[heavyi:])
+        return np.sum(self._Yi[self._heavy_mask])
 
     @property
     def Xi(self) -> np.ndarray:
@@ -133,8 +141,7 @@ class NSESolver(object):
 
     @property
     def Xheavy(self) -> float:
-        heavyi = self._nuclei_names.index('he4') + 1
-        return np.sum(self._Yi[heavyi:]*self._Ai[heavyi:])
+        return np.sum(self._Yi[self._heavy_mask]*self._Ai[self._heavy_mask])
 
     @property
     def Abar(self) -> float:
@@ -146,13 +153,11 @@ class NSESolver(object):
 
     @property
     def Aheavy(self) -> float:
-        heavyi = self._nuclei_names.index('he4') + 1
-        return np.sum(self._Yi[heavyi:]*self._Ai[heavyi:])/np.sum(self._Yi[heavyi:])
+        return np.sum(self._Yi[self._heavy_mask]*self._Ai[self._heavy_mask])/np.sum(self._Yi[self._heavy_mask])
 
     @property
     def Zheavy(self) -> float:
-        heavyi = self._nuclei_names.index('he4') + 1
-        return np.sum(self._Yi[heavyi:]*self._Zi[heavyi:])/np.sum(self._Yi[heavyi:])
+        return np.sum(self._Yi[self._heavy_mask]*self._Zi[self._heavy_mask])/np.sum(self._Yi[self._heavy_mask])
 
     @property
     def finab(self) -> np.ndarray:
@@ -171,20 +176,14 @@ class NSESolver(object):
         return np.array([(Z, X) for Z,X in zip(Zs, Xs)], dtype=[(x, float) for x in ['Z', 'X']])
 
     def _init_solver(self, dens, temp):
-        t9 = temp*1e-9
+        # Lin-log interpolation
+        t9 = np.clip(temp*1e-9, _WINVN_TEMP_GRID[0], _WINVN_TEMP_GRID[-1])
+        t9i = np.clip(np.searchsorted(_WINVN_TEMP_GRID, t9), 1, len(_WINVN_TEMP_GRID) - 1)
 
-        if (t9 <= _WINVN_TEMP_GRID[0]):
-            self._Gi = self._spini * self._PFi[:,0]
-        elif (t9 >= _WINVN_TEMP_GRID[-1]):
-            self._Gi = self._spini * self._PFi[:,-1]
-        else:
-            t9i = np.searchsorted(_WINVN_TEMP_GRID, t9)
-
-            t9left, t9right = _WINVN_TEMP_GRID[t9i-1], _WINVN_TEMP_GRID[t9i]
-            pfleft, pfright = self._PFi[:,t9i-1], self._PFi[:,t9i]
-
-            slope = (pfright - pfleft) / (t9right - t9left)
-            self._Gi = self._spini * (slope*t9 - slope*t9right + pfright)
+        t9left, t9right = _WINVN_TEMP_GRID[t9i-1], _WINVN_TEMP_GRID[t9i]
+        w = (t9 - t9left) / (t9right - t9left)
+        ln_pf = (1.0 - w)*self._lnPFi[:,t9i-1] + w*self._lnPFi[:,t9i]
+        self._Gi = self._spini * np.exp(ln_pf)
 
         self._ln_consts = (self._Ai - 1)*np.log(_SAHA_CONST * dens * temp**(-3./2.)) \
                          + 1.5*np.log(self._Ai) \
@@ -250,27 +249,17 @@ class NSESolver(object):
             raise RuntimeError(f'NSE did not converge rho={dens} temp={temp} ye={Ye}')
 
     def _sortNetwork(self, network: List[str]):
-        if 'neut' in network:
-            network[network.index('neut')] = 'n'
-        if 'prot' in network:
-            network[network.index('prot')] = 'p'
-        if 'h1' in network:
-            network[network.index('h1')] = 'p'
-        if 'h2' in network:
-            network[network.index('h2')] = 'd'
-        if 'h3' in network:
-            network[network.index('h3')] = 't'
+        # Map common aliases to winvn names
+        aliases = {'neut': 'n', 'neutron': 'n', 'neutrons': 'n',
+                   'prot': 'p', 'proton': 'p', 'protons': 'p', 'h1': 'p',
+                   'h2': 'd', 'deut': 'd', 'h3': 't'}
+        network = [aliases.get(sp, sp) for sp in network]
+        network = list(dict.fromkeys(['n', 'p'] + network))
 
-        if 'p' not in network:
-            network = ['p'] + network
-        if 'n' not in network:
-            network = ['n'] + network
+        invalid = [sp for sp in network if sp not in _winvn_database]
+        if invalid:
+            raise RuntimeError(f'Invalid species: {invalid}')
 
-        network.sort(key=lambda x: (self._winvn_database[x].Z, self._winvn_database[x].A))
-
-        for sp in network:
-            if not _winvn_database.contains(sp):
-                raise RuntimeError(f'Invalid species: {sp}')
-
+        network.sort(key=lambda x: (_winvn_database[x].Z, _winvn_database[x].A))
         return network
 

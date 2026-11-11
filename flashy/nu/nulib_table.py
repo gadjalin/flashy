@@ -112,7 +112,7 @@ class NulibTable(h5py.File):
         index = 0
         for i in range(self._n_species):
             for j in range(self._n_groups):
-                for k in range(j):
+                for k in range(j+1):
                     self._ies_table[0,index] = self['inelastic_phi0'][j,i,k]
                     self._ies_table[1,index] = self['inelastic_phi1'][j,i,k]
                     index += 1
@@ -149,7 +149,7 @@ class NulibTable(h5py.File):
 
     @property
     def EAS_field_list(self) -> List[str]:
-        return self._eas_field_list
+        return self._eas_field_list.copy()
 
     def EAS(self, xrho: np.ndarray, xtemp: np.ndarray, xye: np.ndarray) -> Dict[str, np.ndarray]:
         xlrho = np.log10(np.atleast_1d(xrho))

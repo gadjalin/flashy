@@ -92,7 +92,7 @@ class EosTable(h5py.File):
 
     @property
     def field_list(self) -> list[str]:
-        return self._vars
+        return self._vars.copy()
 
     @property
     def minimum_density(self) -> float:

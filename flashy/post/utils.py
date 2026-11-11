@@ -79,12 +79,12 @@ def calculate_compactness(at_mass, m, r) -> float:
     Returns
     -------
     float
-        Compactness at mass coordinate `at_mass`.
+        Compactness at mass coordinate at_mass.
 
     Raises
     ------
     ValueError
-        If `at_mass` is not found in `m`.
+        If at_mass is not found in m.
     """
     if at_mass > np.max(m) or at_mass < np.min(m):
         raise ValueError(f'Given domain does not contain requested mass coordinate: {at_mass}')
@@ -138,81 +138,78 @@ def calculate_shock(time, shock_radius):
     return shock_times, shock_rad, shock_vel
 
 
-#def calculate_diagnostic_mask_1d(r, dr, dens, ye, velx, ener, gpot, eos) -> np.ndarray:
-#    xrho = np.asarray(dens, dtype=np.float64)
-#    xtemp = np.full_like(xrho, eos.minimum_temperature, dtype=np.float64)
-#    xye = np.asarray(ye, dtype=np.float64)
-#
-#    coldenergydensity = eos.nuc_eos_zone(EOS_MODE.DENS_TEMP, xrho, xtemp, xye)['logenergy']
-#
-#    xener = np.asarray(ener, dtype=np.float64)
-#    xgpot = np.asarray(gpot, dtype=np.float64)
-#    velr = np.asarray(velx, dtype=np.float64)
-#    vol = np.asarray((4./3.)*PI*((r + dr/2.)**3 - (r - dr/2.)**3), dtype=np.float64)
-#
-#    coldenergy = (10**(coldenergydensity) - eos.energy_shift)*dens*vol
-#    dener = (xener - eos.energy_shift)*dens*vol
-#    dgrav = xgpot*dens*vol
-#    detot = dener + dgrav - coldenergy
-#    return (detot > 0.0) & (velr > 0.0)
+def _diagnostic_energy(cells, eos):
+    dens = np.asarray(cells['dens'], dtype=np.float64)
+    temp = np.full_like(dens, eos.minimum_temperature)
+    ye = np.asarray(cells['ye'], dtype=np.float64)
+
+    coldenergydensity = eos.nuc_eos_zone(EOS_MODE.DENS_TEMP, dens, temp, ye)['logenergy']
+
+    ener = np.asarray(cells['ener'], dtype=np.float64)
+    gpot = np.asarray(cells['gpot'], dtype=np.float64)
+    velr = np.asarray(cells['velx'], dtype=np.float64)
+
+    scoldenergy = (10**(coldenergydensity) - eos.energy_shift)
+    sdener = (ener - eos.energy_shift)
+    sdgrav = gpot
+    return sdener, sdgrav, scoldenergy, velr
 
 
-#def calculate_explosion_energy_1d(r, dr, dens, temp, ye, velx, ener, gpot, eos) -> float:
-#    xrho = np.asarray(dens, dtype=np.float64)
-#    xtemp = np.full_like(xrho, eos.minimum_temperature, dtype=np.float64)
-#    xye = np.asarray(ye, dtype=np.float64)
-#
-#    coldenergydensity = eos.nuc_eos_zone(EOS_MODE.DENS_TEMP, xrho, xtemp, xye)['logenergy']
-#
-#    xener = np.asarray(ener, dtype=np.float64)
-#    xgpot = np.asarray(gpot, dtype=np.float64)
-#    velr = np.asarray(velx, dtype=np.float64)
-#    vol = np.asarray((4./3.)*PI*((r + dr/2.)**3 - (r - dr/2.)**3), dtype=np.float64)
-#
-#    coldenergy = (10**(coldenergydensity) - eos.energy_shift)*dens*vol
-#    dener = (xener - eos.energy_shift)*dens*vol
-#    dgrav = xgpot*dens*vol
-#    detot = dener + dgrav - coldenergy
-#    mask = (detot > 0.0) & (velr > 0.0)
-#    return np.sum(detot[mask])
+def diagnostic_mask(cells, eos: EosTable) -> np.ndarray:
+    sdener, sdgrav, scoldenergy, velr = _diagnostic_energy(cells, eos)
+    sdetot = sdener + sdgrav - scoldenergy
+    return (sdetot > 0.0) & (velr > 0.0)
 
 
-def calculate_diagnostic_mask_1d(data, eos) -> np.ndarray:
-    xrho = np.asarray(data['dens'], dtype=np.float64)
-    xtemp = np.full_like(xrho, eos.minimum_temperature, dtype=np.float64)
-    xye = np.asarray(data['ye'], dtype=np.float64)
+def diagnostic_mass_1d(cells, eos: EosTable) -> float:
+    sdener, sdgrav, scoldenergy, velr = _diagnostic_energy(cells, eos)
 
-    coldenergydensity = eos.nuc_eos_zone(EOS_MODE.DENS_TEMP, xrho, xtemp, xye)['logenergy']
+    dens = np.asarray(cells['dens'], dtype=np.float64)
+    r = np.asarray(cells['r'], dtype=np.float64)
+    dr = np.asarray(cells['dr'], dtype=np.float64)
+    vol = (4./3.) * PI * ((r + dr*0.5)**3 - (r - dr*0.5)**3) 
+    mass = dens*vol
 
-    xener = np.asarray(data['ener'], dtype=np.float64)
-    xgpot = np.asarray(data['gpot'], dtype=np.float64)
-    velr = np.asarray(data['velx'], dtype=np.float64)
-
-    coldenergy = (10**(coldenergydensity) - eos.energy_shift)
-    dener = (xener - eos.energy_shift)
-    dgrav = xgpot
-    detot = dener + dgrav - coldenergy
-    return (detot > 0.0) & (velr > 0.0)
+    sdetot = sdener + sdgrav - scoldenergy
+    return np.sum(mass[(sdetot > 0.0) & (velr > 0.0)])
 
 
-def calculate_explosion_energy_1d(data, eos) -> float:
-    xrho = np.asarray(data['dens'], dtype=np.float64)
-    xtemp = np.full_like(xrho, eos.minimum_temperature, dtype=np.float64)
-    xye = np.asarray(data['ye'], dtype=np.float64)
+def diagnostic_explosion_energy_1d(cells, eos) -> float:
+    sdener, sdgrav, scoldenergy, velr = _diagnostic_energy(cells, eos)
 
-    coldenergydensity = eos.nuc_eos_zone(EOS_MODE.DENS_TEMP, xrho, xtemp, xye)['logenergy']
+    dens = np.asarray(cells['dens'], dtype=np.float64)
+    r = np.asarray(cells['r'], dtype=np.float64)
+    dr = np.asarray(cells['dr'], dtype=np.float64)
+    vol = (4./3.) * PI * ((r + dr*0.5)**3 - (r - dr*0.5)**3) 
+    mass = dens*vol
 
-    r = np.asarray(data['r'], dtype=np.float64)
-    dr = np.asarray(data['dr'], dtype=np.float64)
-    xener = np.asarray(data['ener'], dtype=np.float64)
-    xgpot = np.asarray(data['gpot'], dtype=np.float64)
-    velr = np.asarray(data['velx'], dtype=np.float64)
-    vol = np.asarray((4./3.)*PI*((r + dr/2.)**3 - (r - dr/2.)**3), dtype=np.float64)
+    detot = (sdener + sdgrav - scoldenergy)*mass
+    return np.sum(detot[(detot > 0.0) & (velr > 0.0)])
 
-    coldenergy = (10**(coldenergydensity) - eos.energy_shift)*xrho*vol
-    dener = (xener - eos.energy_shift)*xrho*vol
-    dgrav = xgpot*xrho*vol
-    detot = dener + dgrav - coldenergy
-    mask = (detot > 0.0) & (velr > 0.0)
-    return np.sum(detot[mask])
+
+def diagnostic_mass_2d(cells, eos: EosTable) -> float:
+    sdener, sdgrav, scoldenergy, velr = _diagnostic_energy(cells, eos)
+
+    dens = np.asarray(cells['dens'], dtype=np.float64)
+    r = np.asarray(cells['r'], dtype=np.float64)
+    dr = np.asarray(cells['dr'], dtype=np.float64)
+    vol = 2.*PI*r*dr*dr
+    mass = dens*vol
+
+    sdetot = sdener + sdgrav - scoldenergy
+    return np.sum(mass[(sdetot > 0.0) & (velr > 0.0)])
+
+
+def diagnostic_explosion_energy_2d(cells, eos) -> float:
+    sdener, sdgrav, scoldenergy, velr = _diagnostic_energy(cells, eos)
+
+    dens = np.asarray(cells['dens'], dtype=np.float64)
+    r = np.asarray(cells['r'], dtype=np.float64)
+    dr = np.asarray(cells['dr'], dtype=np.float64)
+    vol = 2.*PI*r*dr*dr
+    mass = dens*vol
+
+    detot = (sdener + sdgrav - scoldenergy)*mass
+    return np.sum(detot[(detot > 0.0) & (velr > 0.0)])
+
 

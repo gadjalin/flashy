@@ -16,6 +16,7 @@ import yt
 import h5py
 
 from ..post import calculate_shell_mass, get_midcell_dr
+from .._utils import readonly
 
 
 # tqdm progress bar format
@@ -68,7 +69,7 @@ class TimeSeries1D(ABC):
         """
         Load a time series.
 
-        Depending on the type of `path`, this can either load
+        Depending on the type of path, this can either load
         all plot files from a directory, a given list of plot files,
         or an existing time series saved as an hdf5 file.
 
@@ -205,7 +206,7 @@ class TimeSeries1D(ABC):
         times : list
             The list of times stored in the series
         """
-        return np.asarray(self._times, dtype=float)
+        return readonly(np.asarray(self._times, dtype=float))
 
     @property
     def field_list(self) -> List[str]:
@@ -220,7 +221,7 @@ class TimeSeries1D(ABC):
         field_list : list
             The list of quantities stored in the series.
         """
-        return self._field_list
+        return self._field_list.copy()
 
     @property
     def real_scalars(self) -> Dict[str, float]:
@@ -239,7 +240,7 @@ class TimeSeries1D(ABC):
         -------
         real_scalars : dict
         """
-        return self._real_scalars
+        return self._real_scalars.copy()
 
     @property
     def string_scalars(self) -> Dict[str, float]:
@@ -255,7 +256,7 @@ class TimeSeries1D(ABC):
         -------
         str_scalars : dict
         """
-        return self._str_scalars
+        return self._str_scalars.copy()
 
     @property
     def size(self) -> int:
@@ -312,7 +313,7 @@ class TimeSeries1D(ABC):
         r : array-like
             The new grid on which to interpolate the data.
             It must be uniform (linear or logarithmic),
-            typically using `numpy.linspace` and `numpy.logspace`.
+            typically using numpy.linspace and numpy.logspace.
         field_list : 'all' or list, default='all'
             A list of quantities to keep from the
             initial time series.
@@ -322,7 +323,7 @@ class TimeSeries1D(ABC):
         -------
         series : UniformTimeSeries1D
             An new time series interpolated on the new
-            grid given by the `r` parameter.
+            grid given by the r parameter.
         """
         pass
 
@@ -371,20 +372,20 @@ class TimeSeries1D(ABC):
                 return self._str_scalars[key]
             elif key in self._field_list:
                 if len(self) == 1 and isinstance(self, AMRTimeSeries1D):
-                    return self._data[0][key].to_numpy().ravel()
+                    return readonly(self._data[0][key].to_numpy().ravel())
                 elif len(self) == 1 and isinstance(self, UniformTimeSeries1D):
-                    return self._data[key].to_numpy().ravel()
+                    return readonly(self._data[key].to_numpy().ravel())
                 else:
                     return TimeSeriesView1D(self, key)
             elif key in ['r', 'dr'] and isinstance(self, UniformTimeSeries1D):
-                return self._data[key].to_numpy()
+                return readonly(self._data[key].to_numpy())
             elif key in ['t', 'time'] and isinstance(self, UniformTimeSeries1D):
-                return self._data['t'].to_numpy()
+                return readonly(self._data['t'].to_numpy())
             elif key in ['t', 'time'] and isinstance(self, AMRTimeSeries1D):
                 return self.times
             elif key in ['r', 'dr'] and isinstance(self, AMRTimeSeries1D):
                 if len(self) == 1:
-                    return self._data[0][key].to_numpy()
+                    return readonly(self._data[0][key].to_numpy())
                 else:
                     return TimeSeriesView1D(self, key)
             else:
@@ -412,7 +413,7 @@ class TimeSeries1D(ABC):
         'r' and 'dr' are not in the list, as they are implied.
         """
         if field_list == 'default':
-            field_list = _DEFAULT_FIELDS
+            field_list = _DEFAULT_FIELDS.copy()
         else:
             field_list = list(set(field_list)) # Get unique fields
 
@@ -430,7 +431,7 @@ class AMRTimeSeries1D(TimeSeries1D):
 
     When reading plot files from a FLASH simulation,
     an AMRTimeSeries1D is built using the AMR data.
-    Use `interp` to construct a UniformTimeSeries1D
+    Use interp to construct a UniformTimeSeries1D
     using a uniform grid for plotting.
 
     See Also
@@ -465,7 +466,7 @@ class AMRTimeSeries1D(TimeSeries1D):
             selected and used to build a new time series.
             It also ensures that there are no duplicates,
             therefore, it is not guaranteed that the resulting
-            series has the same length as `t`, if `t` is a list
+            series has the same length as t, if t is a list
             of times.
         field_list : 'all' or list, default='all'
             A list of quantities to keep in the new series.
@@ -474,8 +475,8 @@ class AMRTimeSeries1D(TimeSeries1D):
         Returns
         -------
         series : AMRTimeSeries1D
-            A new time series built from the `series` parameter
-            using the times given by the `t` parameter.
+            A new time series built from the series parameter
+            using the times given by the t parameter.
         """
         obj = cls()
 
@@ -764,7 +765,7 @@ class UniformTimeSeries1D(TimeSeries1D):
     Store a time series on a uniform grid.
 
     A UniformTimeSeries1D can be constructed using
-    the `interp` method. This is more convenient for
+    the interp method. This is more convenient for
     plotting.
 
     See Also
@@ -792,7 +793,7 @@ class UniformTimeSeries1D(TimeSeries1D):
             An AMRTimeSeries1D or UniformTimeSeries1D to interpolate.
         r : array-like
             A uniform grid of radii coordinates on which
-            to interpolate the `series`.
+            to interpolate the series.
             It must be uniform (linear or logarithmic).
         field_list : 'all' or list, default='all'
             A list of quantities to keep in the new series.
@@ -937,7 +938,7 @@ class UniformTimeSeries1D(TimeSeries1D):
 
     @property
     def radii(self) -> np.ndarray:
-        return self._data.coords['r'].to_numpy()
+        return readonly(self._data.coords['r'].to_numpy())
 
     def save_hdf5(self, file: str) -> None:
         with h5py.File(file, 'w') as f:
@@ -1063,9 +1064,9 @@ class TimeSeriesView1D(object):
             if key in self._field_list:
                 if len(self._series) == 1:
                     if isinstance(self._series, AMRTimeSeries1D):
-                        return self._series._data[0][key].to_numpy()
+                        return readonly(self._series._data[0][key].to_numpy())
                     elif isinstance(self._series, UniformTimeSeries1D):
-                        return self._series._data[key].to_numpy()
+                        return readonly(self._series._data[key].to_numpy())
                 else:
                     return TimeSeriesView1D(self._series, key)
             elif key in ['t', 'time']:
@@ -1107,7 +1108,7 @@ class TimeSeriesView1D(object):
 
     def at_time(self, t: float) -> Union[np.ndarray, Dict[str, np.ndarray]]:
         """
-        Get arrays of quantities at time `t`.
+        Get arrays of quantities at time t.
 
         Parameters
         ----------
@@ -1120,7 +1121,7 @@ class TimeSeriesView1D(object):
         -------
         data : array-like or dict
             Returns a radial profile of the quantities
-            indexed in the view at time `t`.
+            indexed in the view at time t.
             It is a dictionary of arrays if multiple quantities are indexed
             in the view.
         """
@@ -1128,14 +1129,14 @@ class TimeSeriesView1D(object):
             times = self._series.times
             ind = int(np.argmin(np.abs(times - t)))
             if len(self._field_list) == 1:
-                return self._series._data[ind][self._field_list[0]].to_numpy()
+                return readonly(self._series._data[ind][self._field_list[0]].to_numpy())
             else:
-                return {field: self._series._data[ind][field].to_numpy() for field in self._field_list}
+                return {field: readonly(self._series._data[ind][field].to_numpy()) for field in self._field_list}
         elif isinstance(self._series, UniformTimeSeries1D):
             if len(self._field_list) == 1:
-                return self._series._data[self._field_list[0]].sel(t=t, method='nearest').to_numpy()
+                return readonly(self._series._data[self._field_list[0]].sel(t=t, method='nearest').to_numpy())
             else:
-                return {field: self._series._data[field].sel(t=t, method='nearest').to_numpy() for field in self._field_list}
+                return {field: readonly(self._series._data[field].sel(t=t, method='nearest').to_numpy()) for field in self._field_list}
 
     def as_array(self) -> Union[np.ndarray, dict[str, np.ndarray]]:
         """
@@ -1145,7 +1146,7 @@ class TimeSeriesView1D(object):
         -------
         data : array-like or dict
             2D time series numpy arrays of indexed quantities,
-            directly usable in e.g. matplotlib's `contour` and `pcolormesh`.
+            directly usable in e.g. matplotlib's contour and pcolormesh.
             It is a dictionary of arrays if multiple quantities are indexed
             in the view.
         """
@@ -1162,9 +1163,9 @@ class TimeSeriesView1D(object):
             raise RuntimeError('Cannot construct array from AMR time series')
         elif isinstance(self._series, UniformTimeSeries1D):
             if len(self._series) > 1:
-                return np.swapaxes(self._series._data[field].to_numpy(), 0, 1)
+                return readonly(np.swapaxes(self._series._data[field].to_numpy(), 0, 1))
             else:
-                return self._series._data[field].to_numpy()
+                return readonly(self._series._data[field].to_numpy())
 
 
 class TimeSeriesIterator1D(object):
