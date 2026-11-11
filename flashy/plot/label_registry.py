@@ -28,6 +28,13 @@ def _parse_isotope(key: str) -> Optional[Nucleus]:
         return None
 
 
+def _absolute_name(name: str) -> str:
+    # Wrap a name in absolute value bars: $\phi$ -> $|\phi|$, Name -> $|$Name$|$
+    if len(name) > 1 and name.startswith('$') and name.endswith('$') and name.count('$') == 2:
+        return f'$|{name[1:-1]}|$'
+    return f'$|${name}$|$'
+
+
 def _isotope_tex(nucleus: Nucleus) -> str:
     if nucleus.Z == 0:
         return r'\mathrm{n}'
@@ -88,15 +95,17 @@ class LabelRegistry(object):
         scale_style: str = 'auto',
         unit_style: str = 'brackets',
         name_style: str = 'symbol',
-        default: Optional[str] = None
+        default: Optional[str] = None,
+        absolute: bool = False
     ) -> str:
         # Get descriptor, or format the default as the name if the key is unknown
         if key not in self:
             if default is None:
                 raise KeyError(f'Unresolved key: {key}')
-            return self.make_label(default, None, scale, scale_style, unit_style)
+            name = _absolute_name(default) if absolute else default
+            return self.make_label(name, None, scale, scale_style, unit_style)
 
-        return self.format_label(self.get_descriptor(key), units, scale, scale_style, unit_style, name_style)
+        return self.format_label(self.get_descriptor(key), units, scale, scale_style, unit_style, name_style, absolute)
 
     def format_label(
         self,
@@ -106,11 +115,14 @@ class LabelRegistry(object):
         scale_style: str = 'auto',
         unit_style: str = 'brackets',
         name_style: str = 'symbol',
+        absolute: bool = False
     ) -> str:
         # Resolve name style
         name = getattr(descriptor, name_style, None)
         if name is None:
             raise ValueError(f'Invalid name style: {name_style}')
+        if absolute:
+            name = _absolute_name(name)
 
         # Check unit style
         if unit_style != 'none' and unit_style not in _UNIT_SURROUND:
@@ -180,6 +192,11 @@ class LabelRegistry(object):
         if key not in self and default is not None:
             return default
         return 'log' if self.get_descriptor(key).log else 'linear'
+
+    def get_plot_absolute(self, key: str, default: Optional[bool] = None) -> bool:
+        if key not in self and default is not None:
+            return default
+        return self.get_descriptor(key).absolute
 
     def get_unit_factor(
         self,

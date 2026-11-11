@@ -23,6 +23,7 @@ class LabelDescriptor(object):
     # for convenience, they give labels but no unit conversion (except identity).
     units: Mapping[str, Union[Unit, str]] = field(default_factory=dict)
     log: bool = field(default=False)          # Is it preferred to plot quantity in log scale?
+    absolute: bool = field(default=False)     # Is it preferred to plot the absolute value?
     default_units: Optional[str] = None       # Default unit system key in the units dictionary
     data_units: Optional[str] = None          # Unit system of the data stored in the FLASH output
 
@@ -308,6 +309,7 @@ _DEFAULT_DESCRIPTORS = [
         full='Gravitational Potential Energy',
         units=SPECIFIC_ENERGY_UNITS,
         log=True,
+        absolute=True,
         default_units='cgs'
     ),
     LabelDescriptor(
